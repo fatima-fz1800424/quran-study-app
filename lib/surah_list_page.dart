@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -47,16 +48,39 @@ class LastReadState {
 }
 
 class QuranDataLoader {
+  // The reader payload is ~2.9MB of JSON and was previously re-read and
+  // re-decoded on every call - once per surah opened, and again for every
+  // citation followed. Holding the decoded map costs memory but makes opening a
+  // verse instant, which navigation from a citation depends on.
+  static Map<String, dynamic>? _decoded;
+  static List<SurahSummary>? _surahs;
+
+  /// The surah list if it has already been loaded, otherwise null. Lets callers
+  /// that must not wait - navigating to a cited verse - resolve a surah without
+  /// an await.
+  static List<SurahSummary>? get cachedSurahs => _surahs;
+
   static Future<Map<String, dynamic>> _loadData() async {
+    final cached = _decoded;
+    if (cached != null) {
+      return cached;
+    }
     final jsonString = await rootBundle.loadString('assets/quran_reader_data.json');
-    return jsonDecode(jsonString) as Map<String, dynamic>;
+    final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
+    _decoded = decoded;
+    return decoded;
   }
 
   static Future<List<SurahSummary>> loadSurahs() async {
+    final cached = _surahs;
+    if (cached != null) {
+      return cached;
+    }
+
     final decoded = await _loadData();
     final surahs = decoded['surahs'] as List<dynamic>;
 
-    return surahs
+    final loaded = surahs
         .map(
           (surah) => SurahSummary(
             number: surah['number'] as int,
@@ -67,6 +91,8 @@ class QuranDataLoader {
           ),
         )
         .toList();
+    _surahs = loaded;
+    return loaded;
   }
 
   static Future<List<AyahEntry>> loadAyahsForSurah(int surahNumber) async {
@@ -120,18 +146,56 @@ class QuranDataLoader {
   }
 }
 
-class MainShell extends StatefulWidget {
+/// Tabs in [MainShell]. Kept as named constants so cross-tab navigation reads
+/// as intent rather than as an index.
+const int kReadTabIndex = 0;
+const int kAssistantTabIndex = 1;
+
+/// The verse a citation asked the reader to open.
+class ReaderTarget {
+  const ReaderTarget({required this.surahNumber, required this.ayahNumber});
+
+  final int surahNumber;
+  final int ayahNumber;
+
+  String get reference => '$surahNumber:$ayahNumber';
+}
+
+/// Parse a `surah:verse` reference, or null if it is not one.
+///
+/// Bounds are checked against the corpus - 114 surahs, longest is 286 verses -
+/// so a stray number in model output cannot become a navigation target.
+ReaderTarget? parseReference(String reference) {
+  final parts = reference.trim().split(':');
+  if (parts.length != 2) {
+    return null;
+  }
+  final surahNumber = int.tryParse(parts[0]);
+  final ayahNumber = int.tryParse(parts[1]);
+  if (surahNumber == null || ayahNumber == null) {
+    return null;
+  }
+  if (surahNumber < 1 || surahNumber > 114 || ayahNumber < 1 || ayahNumber > 286) {
+    return null;
+  }
+  return ReaderTarget(surahNumber: surahNumber, ayahNumber: ayahNumber);
+}
+
+/// Which tab [MainShell] is showing. Held outside the shell so a tap on a
+/// citation in the assistant can move the user to the reader.
+final selectedTabProvider = StateProvider<int>((ref) => kReadTabIndex);
+
+/// A pending request to open a verse in the reader. Set by whoever wants to
+/// navigate; cleared by the reader tab once it has handled it.
+final readerTargetProvider = StateProvider<ReaderTarget?>((ref) => null);
+
+class MainShell extends ConsumerWidget {
   const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedIndex = ref.watch(selectedTabProvider);
 
-class _MainShellState extends State<MainShell> {
-  int _selectedIndex = 0;
-
-  @override
-  Widget build(BuildContext context) {
     final pages = <Widget>[
       const SurahListPage(),
       const AssistantPage(),
@@ -139,12 +203,13 @@ class _MainShellState extends State<MainShell> {
 
     return Scaffold(
       body: IndexedStack(
-        index: _selectedIndex,
+        index: selectedIndex,
         children: pages,
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (value) => setState(() => _selectedIndex = value),
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (value) =>
+            ref.read(selectedTabProvider.notifier).state = value,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book_rounded), label: 'Read'),
           NavigationDestination(icon: Icon(Icons.chat_bubble_outline_rounded), selectedIcon: Icon(Icons.chat_bubble_rounded), label: 'Assistant'),
@@ -179,9 +244,52 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
     super.dispose();
   }
 
+  /// Open a verse that something outside this tab asked for, without waiting on
+  /// a rebuild or a spinner. The surah list is normally already cached by the
+  /// time a citation can be tapped, so the common path does not await at all.
+  void _openReaderTarget(ReaderTarget target) {
+    final cached = QuranDataLoader.cachedSurahs;
+    if (cached != null) {
+      _pushReader(cached, target);
+      return;
+    }
+    // Cold start only: the list has not finished loading yet.
+    QuranDataLoader.loadSurahs().then((surahs) {
+      if (mounted) {
+        _pushReader(surahs, target);
+      }
+    });
+  }
+
+  void _pushReader(List<SurahSummary> surahs, ReaderTarget target) {
+    final match = surahs.where((item) => item.number == target.surahNumber);
+    if (match.isEmpty) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReaderPage(
+          surah: match.first,
+          initialAyah: target.ayahNumber,
+          highlightInitialAyah: true,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // Consume any pending request to open a verse. Cleared immediately so a
+    // later rebuild cannot re-open the same verse.
+    ref.listen<ReaderTarget?>(readerTargetProvider, (previous, next) {
+      if (next == null) {
+        return;
+      }
+      ref.read(readerTargetProvider.notifier).state = null;
+      _openReaderTarget(next);
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -379,10 +487,20 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
 }
 
 class ReaderPage extends ConsumerStatefulWidget {
-  const ReaderPage({required this.surah, this.initialAyah, super.key});
+  const ReaderPage({
+    required this.surah,
+    this.initialAyah,
+    this.highlightInitialAyah = false,
+    super.key,
+  });
 
   final SurahSummary surah;
   final int? initialAyah;
+
+  /// Briefly tint [initialAyah] on arrival. Used when the user was sent here
+  /// from somewhere else - a citation in the assistant - so that it is obvious
+  /// which verse they landed on among its neighbours.
+  final bool highlightInitialAyah;
 
   @override
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
@@ -399,11 +517,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   int? _pendingScrollToAyah;
   int? _lastSavedAyah;
   ScrollPosition? _watchedPosition;
+  int? _highlightedAyah;
+  Timer? _highlightTimer;
+
+  static const Duration _highlightHold = Duration(milliseconds: 1600);
 
   @override
   void initState() {
     super.initState();
     _pendingScrollToAyah = widget.initialAyah;
+    if (widget.highlightInitialAyah) {
+      _highlightedAyah = widget.initialAyah;
+      _highlightTimer = Timer(_highlightHold, () {
+        if (mounted) {
+          setState(() => _highlightedAyah = null);
+        }
+      });
+    }
     _ayahsFuture = QuranDataLoader.loadAyahsForSurah(widget.surah.number);
     _loadBookmarks();
     // Opening a surah is itself a read position. Record it now so that resume
@@ -413,6 +543,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   @override
   void dispose() {
+    _highlightTimer?.cancel();
     _watchedPosition?.isScrollingNotifier.removeListener(_handleScrollActivity);
     _scrollController.dispose();
     super.dispose();
@@ -728,13 +859,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
               _indexToVerse[index] = ayah.verseNumber;
               final isBookmarked = _bookmarks.contains('${widget.surah.number}:${ayah.verseNumber}');
               final showTranslation = _showTranslations && ayah.translation.trim().isNotEmpty;
+              final isHighlighted = _highlightedAyah == ayah.verseNumber;
 
               return Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 700),
-                  child: Padding(
+                  // Padding is unchanged; only the background animates, so
+                  // arriving at a verse does not shift the text around it.
+                  child: AnimatedContainer(
                     key: key,
+                    duration: const Duration(milliseconds: 300),
                     padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      color: isHighlighted
+                          ? theme.colorScheme.tertiary.withOpacity(0.16)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -855,14 +996,14 @@ class _AssistantDisclaimer extends StatelessWidget {
   }
 }
 
-class AssistantPage extends StatefulWidget {
+class AssistantPage extends ConsumerStatefulWidget {
   const AssistantPage({super.key});
 
   @override
-  State<AssistantPage> createState() => _AssistantPageState();
+  ConsumerState<AssistantPage> createState() => _AssistantPageState();
 }
 
-class _AssistantPageState extends State<AssistantPage> {
+class _AssistantPageState extends ConsumerState<AssistantPage> {
   final TextEditingController _controller = TextEditingController();
   bool _loading = false;
   String? _question;
@@ -928,40 +1069,20 @@ class _AssistantPageState extends State<AssistantPage> {
     }
   }
 
-  Future<void> _openReference(String reference) async {
-    final parts = reference.split(':');
-    if (parts.length != 2) {
+  /// Hand a cited verse to the reader tab.
+  ///
+  /// Synchronous by design: it only sets state, so the tab switch happens in
+  /// the same frame as the tap. Previously this awaited a 2.9MB asset decode
+  /// and then pushed a reader on top of the assistant, which left the user
+  /// outside the tab they appeared to be in.
+  void _openReference(String reference) {
+    final target = parseReference(reference);
+    if (target == null) {
       return;
     }
 
-    final surahNumber = int.tryParse(parts[0]);
-    final ayahNumber = int.tryParse(parts[1]);
-    if (surahNumber == null || ayahNumber == null) {
-      return;
-    }
-
-    final surahs = await QuranDataLoader.loadSurahs();
-    if (!mounted) {
-      return;
-    }
-
-    final match = surahs.firstWhere(
-      (item) => item.number == surahNumber,
-      orElse: () => surahs.first,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ReaderPage(
-          surah: match,
-          initialAyah: ayahNumber,
-        ),
-      ),
-    );
+    ref.read(readerTargetProvider.notifier).state = target;
+    ref.read(selectedTabProvider.notifier).state = kReadTabIndex;
   }
 
   @override
@@ -1043,9 +1164,11 @@ class _AssistantPageState extends State<AssistantPage> {
                                 runSpacing: 8,
                                 children: _references
                                     .map(
-                                      (ref) => ActionChip(
-                                        label: Text(ref),
-                                        onPressed: () => _openReference(ref),
+                                      (reference) => ActionChip(
+                                        label: Text(reference),
+                                        avatar: const Icon(Icons.menu_book_outlined, size: 16),
+                                        tooltip: 'Open $reference in the reader',
+                                        onPressed: () => _openReference(reference),
                                       ),
                                     )
                                     .toList(),

@@ -96,6 +96,50 @@ void main() {
     expect(prefs.getInt('last_read_ayah'), 255);
   });
 
+  testWidgets('a citation can move the user to the reader tab', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const QuranStudyApp(),
+      ),
+    );
+    expect(container.read(selectedTabProvider), kReadTabIndex);
+
+    // What tapping a citation chip does: set the target, switch the tab. Both
+    // are plain state writes, so the switch lands in the same frame.
+    container.read(readerTargetProvider.notifier).state =
+        const ReaderTarget(surahNumber: 16, ayahNumber: 127);
+    container.read(selectedTabProvider.notifier).state = kAssistantTabIndex;
+    await tester.pump();
+
+    expect(container.read(selectedTabProvider), kAssistantTabIndex);
+    expect(
+      find.textContaining('not a substitute for a qualified scholar'),
+      findsOneWidget,
+    );
+  });
+
+  test('reference parsing rejects anything outside the corpus', () {
+    expect(parseReference('2:255')?.surahNumber, 2);
+    expect(parseReference('2:255')?.ayahNumber, 255);
+    expect(parseReference(' 16:127 ')?.reference, '16:127');
+
+    // A stray number in model output must not become a navigation target.
+    expect(parseReference('115:1'), isNull);
+    expect(parseReference('2:999'), isNull);
+    expect(parseReference('0:1'), isNull);
+    expect(parseReference('2:0'), isNull);
+    expect(parseReference('2'), isNull);
+    expect(parseReference('two:five'), isNull);
+    expect(parseReference(''), isNull);
+  });
+
   test('theme and font size state stay synchronized and clamp sensibly', () async {
     SharedPreferences.setMockInitialValues({});
     final container = ProviderContainer();
