@@ -42,3 +42,9 @@
 
 - Scope choice: the assistant should use the Yusuf Ali translation already bundled in `assets/quran_reader_data.json` as the app corpus. Tafsir is out of scope for this release.
 - Reason: no tafsir source with a clear redistribution licence could be identified and verified in time, so tafsir is deferred rather than bundled without a defensible rights basis. The app remains retrieval-grounded for the assistant, but the corpus is the bundled translation corpus and not classical tafsir.
+
+## Chunking strategy
+
+- Decision: keep one chunk per ayah, but include a small neighbouring-verse window alongside each chunk as optional context.
+- Reason: a single ayah is the minimal citation boundary and preserves the non-negotiable requirement that every answer names the exact surah:verse source. However, a passage's meaning often spans multiple verses, and retrieval quality is stronger when a chunk can include the immediate surrounding text without losing precision. The window is intentionally small (previous and next verse only), so we still keep the chunk anchored to one verse and do not cross into broad narrative blocks. This gives us source-faithful grounding with better context for downstream retrieval without encouraging over-broad chunking.
+- Implementation: each chunk keeps the required fields (`surah_number`, `verse_number`, `surah_name_english`, `surah_name_arabic`, `translation_text`, and `arabic_text`) and may also include a `context_before` and `context_after` field for adjacent verses. The primary identifier remains the verse reference itself.
