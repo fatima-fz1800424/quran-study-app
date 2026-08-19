@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'main.dart';
+import 'voice.dart';
 
 const String kQuranBackendBaseUrl = 'http://127.0.0.1:8123';
 
@@ -1067,9 +1068,124 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   String? _error;
   String? _stage;
   List<String> _references = const [];
+  bool _listening = false;
+  bool _speaking = false;
 
   static const String _stageSearching = 'Searching the translation for relevant verses';
   static const String _stageComposing = 'Composing an answer from those verses';
+
+  /// Whether the off-device notice has been shown and accepted.
+  static const String _voiceNoticeKey = 'voice_notice_accepted';
+
+  /// Ask for the microphone, but only after the user has been told where their
+  /// audio goes.
+  ///
+  /// The notice is deliberately a gate rather than a footnote: it appears before
+  /// the recogniser is ever started, so nobody learns their voice left the
+  /// machine after the fact. Accepting is remembered; declining is not, so the
+  /// notice reappears rather than silently granting consent once.
+  Future<bool> _ensureVoiceNoticeAccepted() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_voiceNoticeKey) ?? false) {
+      return true;
+    }
+    if (!mounted) {
+      return false;
+    }
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Before you speak'),
+        content: const Text(
+          'Dictation uses your browser\'s speech service, so the audio of what '
+          'you say is sent off this device to be transcribed. This app does not '
+          'record or store audio, and does not keep the transcript beyond the '
+          'question you choose to send.\n\n'
+          'You can always type your question instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Use the microphone'),
+          ),
+        ],
+      ),
+    );
+
+    if (accepted ?? false) {
+      await prefs.setBool(_voiceNoticeKey, true);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _toggleListening() async {
+    final voice = ref.read(voiceServiceProvider);
+
+    if (_listening) {
+      await voice.stopListening();
+      if (mounted) {
+        setState(() => _listening = false);
+      }
+      return;
+    }
+
+    if (!await _ensureVoiceNoticeAccepted()) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _listening = true);
+    await voice.startListening(
+      onTranscript: (transcript, isFinal) {
+        if (!mounted) {
+          return;
+        }
+        // The transcript is only ever placed in the field. Nothing is sent
+        // here, on a final result or otherwise - see _submitQuestion, which
+        // only runs from the send button or the Enter key.
+        setState(() {
+          _controller.value = TextEditingValue(
+            text: transcript,
+            selection: TextSelection.collapsed(offset: transcript.length),
+          );
+        });
+      },
+      onDone: () {
+        if (mounted) {
+          setState(() => _listening = false);
+        }
+      },
+    );
+  }
+
+  Future<void> _toggleSpeaking() async {
+    final voice = ref.read(voiceServiceProvider);
+    final answer = _answer;
+
+    if (_speaking || answer == null || answer.trim().isEmpty) {
+      await voice.stopSpeaking();
+      if (mounted) {
+        setState(() => _speaking = false);
+      }
+      return;
+    }
+
+    setState(() => _speaking = true);
+    // Reads the English answer only. Verse references are spoken as the
+    // numbers they are; no Arabic is ever passed to the speech engine.
+    await voice.speak(answer);
+    if (mounted) {
+      setState(() => _speaking = false);
+    }
+  }
 
   /// POST to the backend, returning the decoded body, or null after recording
   /// an error for display.
@@ -1293,9 +1409,33 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Answer',
-                              style: theme.textTheme.titleMedium,
+                            Row(
+                              children: [
+                                Text(
+                                  'Answer',
+                                  style: theme.textTheme.titleMedium,
+                                ),
+                                const Spacer(),
+                                // Reading aloud is offered only for a real
+                                // answer, never for an error message.
+                                if (_answer != null &&
+                                    _error == null &&
+                                    (ref.watch(voiceAvailableProvider).valueOrNull ?? false))
+                                  IconButton(
+                                    onPressed: _toggleSpeaking,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: Icon(
+                                      _speaking
+                                          ? Icons.stop_circle_outlined
+                                          : Icons.volume_up_outlined,
+                                      size: 20,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    tooltip: _speaking
+                                        ? 'Stop reading'
+                                        : 'Read this answer aloud',
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 10),
                             Text(
@@ -1364,6 +1504,21 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Hidden rather than disabled where speech is unsupported, so
+                  // it never looks like a broken control.
+                  if (ref.watch(voiceAvailableProvider).valueOrNull ?? false)
+                    IconButton(
+                      onPressed: _toggleListening,
+                      icon: Icon(
+                        _listening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                        color: _listening
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                      tooltip: _listening
+                          ? 'Stop dictating'
+                          : 'Dictate a question (audio is sent off device)',
+                    ),
                   Container(
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primary,

@@ -113,6 +113,45 @@ Next steps recommended:
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
 
+## Voice input and read-aloud (2026-08-20)
+
+Added to the assistant tab only: a microphone that dictates into the question
+field, and a speaker that reads an answer back. `speech_to_text` and
+`flutter_tts`.
+
+Two properties are deliberate and enforced by tests rather than by convention:
+
+- **The transcript never sends itself.** Dictation only ever writes into the
+  question field; sending requires the send button or the Enter key. A final
+  result from the recogniser means the recogniser has stopped, not that the user
+  has decided to ask - and misheard religious terms are exactly the case where
+  an automatic send would be worst. The test asserts that a final,
+  high-confidence transcript produces no request.
+- **The off-device notice is a gate, not a footnote.** Audio leaves the device
+  (see below), so the notice appears and must be accepted *before* the
+  microphone is opened. Accepting is remembered; declining is not, so a decline
+  can never be mistaken for consent later.
+
+The microphone is hidden, not disabled, where the platform reports no speech
+support, so it never appears as a broken control and no audio is captured on
+unverified platforms.
+
+### The offline conflict, stated plainly
+
+Web dictation is a wrapper over the browser's Web Speech API, so **the audio of
+the user's voice is sent off the device** to the browser vendor's speech
+service. That is a stronger data flow than anything else in the app, and it is
+recorded in `docs/SOURCES.md` alongside the Gemini flow.
+
+It also means voice requires connectivity. That is consistent with where the
+line already sits rather than a new exception: CLAUDE.md rule 5 exempts the AI
+assistant, which needs the network regardless, and voice lives entirely inside
+that tab. Reading, audio playback, bookmarks and settings remain fully offline.
+
+Read-aloud is given the English answer only. Quranic Arabic is never passed to a
+speech engine - an English voice mispronounces it, and rule 1 covers audio as
+much as text.
+
 ## /ask latency, and why the answer is not streamed (2026-08-20)
 
 Profiled per stage against a running server. The starting point was an 8.6s

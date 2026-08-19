@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:quran_study_app/main.dart';
 import 'package:quran_study_app/surah_list_page.dart';
+import 'package:quran_study_app/voice.dart';
 
 /// A stand-in surah for reader tests. Only `number` affects what these tests
 /// assert, and the Arabic name is left empty rather than typed out, so no
@@ -297,6 +298,127 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getInt('last_read_surah'), 2);
     expect(prefs.getInt('last_read_ayah'), 255);
+  });
+
+  /// Pump the app on the Assistant tab with a fake speech service and the
+  /// off-device notice already accepted.
+  Future<FakeVoiceService> pumpAssistantWithVoice(
+    WidgetTester tester, {
+    bool available = true,
+    bool noticeAccepted = true,
+  }) async {
+    SharedPreferences.setMockInitialValues(
+      noticeAccepted ? {'voice_notice_accepted': true} : {},
+    );
+    final fake = FakeVoiceService(available: available);
+    final container = ProviderContainer(
+      overrides: [voiceServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const QuranStudyApp(),
+      ),
+    );
+    container.read(selectedTabProvider.notifier).state = kAssistantTabIndex;
+    await tester.pump();
+    await tester.pump();
+    return fake;
+  }
+
+  testWidgets('a final transcript is never sent on its own', (
+    WidgetTester tester,
+  ) async {
+    final voice = await pumpAssistantWithVoice(tester);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    expect(voice.listening, isTrue);
+
+    voice.emit('what does the Quran say about patience', isFinal: true);
+    await tester.pump();
+
+    // The words land in the field for review...
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'what does the Quran say about patience',
+    );
+    // ...and nothing was sent. A final result is the recogniser being done,
+    // not the user deciding to ask.
+    expect(find.text('Question'), findsNothing);
+
+    // Only the send action submits.
+    await tester.tap(find.byTooltip('Send question'));
+    await tester.pump();
+    expect(find.text('Question'), findsOneWidget);
+  });
+
+  testWidgets('partial transcripts keep replacing the pending text', (
+    WidgetTester tester,
+  ) async {
+    final voice = await pumpAssistantWithVoice(tester);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+
+    voice.emit('what does');
+    await tester.pump();
+    voice.emit('what does the Quran say');
+    await tester.pump();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'what does the Quran say',
+    );
+    expect(find.text('Question'), findsNothing);
+  });
+
+  testWidgets('the off-device notice gates the first recording', (
+    WidgetTester tester,
+  ) async {
+    final voice = await pumpAssistantWithVoice(tester, noticeAccepted: false);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+
+    // The notice must come before the microphone opens, not after.
+    expect(find.text('Before you speak'), findsOneWidget);
+    expect(find.textContaining('sent off this device'), findsOneWidget);
+    expect(voice.listening, isFalse);
+
+    await tester.tap(find.text('Not now'));
+    await tester.pump();
+    expect(voice.listening, isFalse, reason: 'declining must not start the mic');
+
+    // Declining is not remembered as consent: the notice returns.
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    expect(find.text('Before you speak'), findsOneWidget);
+
+    await tester.tap(find.text('Use the microphone'));
+    await tester.pump();
+    expect(voice.listening, isTrue);
+  });
+
+  testWidgets('the microphone is hidden where speech is unsupported', (
+    WidgetTester tester,
+  ) async {
+    await pumpAssistantWithVoice(tester, available: false);
+
+    expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
+    expect(find.byIcon(Icons.mic_rounded), findsNothing);
+    // Typing still works, so the tab is not degraded.
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('there is nothing to read aloud before an answer arrives', (
+    WidgetTester tester,
+  ) async {
+    await pumpAssistantWithVoice(tester);
+
+    expect(find.byIcon(Icons.volume_up_outlined), findsNothing);
   });
 
   test('reference parsing rejects anything outside the corpus', () {
