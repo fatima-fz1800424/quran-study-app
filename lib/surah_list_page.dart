@@ -60,6 +60,18 @@ class QuranDataLoader {
   /// an await.
   static List<SurahSummary>? get cachedSurahs => _surahs;
 
+  /// Install a corpus payload directly, bypassing the asset bundle.
+  ///
+  /// Widget tests cannot load the real asset: `rootBundle` needs real async,
+  /// which the fake-async test zone does not run, so anything that awaits it
+  /// hangs. Seeding the cache lets the reader be exercised for real in tests -
+  /// including scrolling, which was previously impossible to verify.
+  @visibleForTesting
+  static void seedCorpusForTests(Map<String, dynamic> data) {
+    _decoded = data;
+    _surahs = null;
+  }
+
   static Future<Map<String, dynamic>> _loadData() async {
     final cached = _decoded;
     if (cached != null) {
@@ -189,6 +201,53 @@ final selectedTabProvider = StateProvider<int>((ref) => kReadTabIndex);
 /// navigate; cleared by the reader tab once it has handled it.
 final readerTargetProvider = StateProvider<ReaderTarget?>((ref) => null);
 
+/// The last reading position, held in state rather than read once into a Future.
+///
+/// It has to be state: the surah list is never disposed - it lives in the
+/// shell's IndexedStack - so anything loaded in its initState is loaded exactly
+/// once per app run. A one-shot Future here meant the resume row kept showing
+/// whatever position happened to be stored at launch, no matter how much
+/// reading happened afterwards.
+class LastReadNotifier extends StateNotifier<LastReadState?> {
+  LastReadNotifier() : super(null) {
+    _load();
+  }
+
+  /// True once a position has been recorded in this session.
+  ///
+  /// The initial load is asynchronous, so it can finish after the user has
+  /// already opened a surah. Without this flag it would then overwrite that
+  /// fresh position with the older stored one - and the reader saves on open,
+  /// so the race is the common case on a fast launch, not a rare one.
+  bool _recordedThisSession = false;
+
+  Future<void> _load() async {
+    final stored = await QuranDataLoader.loadLastRead();
+    if (_recordedThisSession) {
+      return;
+    }
+    state = stored;
+  }
+
+  Future<void> save(int surahNumber, int ayahNumber) async {
+    final current = state;
+    if (current != null &&
+        current.surahNumber == surahNumber &&
+        current.ayahNumber == ayahNumber) {
+      return;
+    }
+    _recordedThisSession = true;
+    // State first so the UI updates in this frame; the write follows.
+    state = LastReadState(surahNumber: surahNumber, ayahNumber: ayahNumber);
+    await QuranDataLoader.saveLastRead(surahNumber, ayahNumber);
+  }
+}
+
+final lastReadProvider =
+    StateNotifierProvider<LastReadNotifier, LastReadState?>(
+  (ref) => LastReadNotifier(),
+);
+
 class MainShell extends ConsumerWidget {
   const MainShell({super.key});
 
@@ -228,14 +287,12 @@ class SurahListPage extends ConsumerStatefulWidget {
 
 class _SurahListPageState extends ConsumerState<SurahListPage> {
   late Future<List<SurahSummary>> _surahsFuture;
-  Future<LastReadState?>? _lastReadFuture;
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _surahsFuture = QuranDataLoader.loadSurahs();
-    _lastReadFuture = QuranDataLoader.loadLastRead();
   }
 
   @override
@@ -280,6 +337,9 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Watched, not loaded once: this rebuilds whenever the reader records a new
+    // position, which is what keeps the resume row current.
+    final lastRead = ref.watch(lastReadProvider);
 
     // Consume any pending request to open a verse. Cleared immediately so a
     // later rebuild cannot re-open the same verse.
@@ -324,11 +384,8 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
                   return haystack.contains(query);
                 }).toList();
 
-          return FutureBuilder<LastReadState?>(
-            future: _lastReadFuture,
-            builder: (context, lastReadSnapshot) {
-              final lastRead = lastReadSnapshot.data;
-
+          return Builder(
+            builder: (context) {
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
@@ -515,10 +572,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   final GlobalKey _listKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
   int? _pendingScrollToAyah;
-  int? _lastSavedAyah;
-  ScrollPosition? _watchedPosition;
   int? _highlightedAyah;
   Timer? _highlightTimer;
+  Timer? _scrollSettleTimer;
 
   static const Duration _highlightHold = Duration(milliseconds: 1600);
 
@@ -534,17 +590,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         }
       });
     }
+    _scrollController.addListener(_handleScroll);
     _ayahsFuture = QuranDataLoader.loadAyahsForSurah(widget.surah.number);
     _loadBookmarks();
-    // Opening a surah is itself a read position. Record it now so that resume
-    // works even if the reader is closed again without scrolling or bookmarking.
-    _saveLastRead(widget.initialAyah ?? 1);
+    // Opening a surah is itself a read position, recorded so that resume works
+    // even if the reader is closed again without scrolling or bookmarking.
+    // Deferred by a frame because this writes to a provider, and Riverpod
+    // rightly refuses provider writes from initState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _saveLastRead(widget.initialAyah ?? 1);
+      }
+    });
   }
 
   @override
   void dispose() {
     _highlightTimer?.cancel();
-    _watchedPosition?.isScrollingNotifier.removeListener(_handleScrollActivity);
+    _scrollSettleTimer?.cancel();
+    _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -566,39 +630,32 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   Future<void> _saveLastRead(int ayahNumber) async {
-    if (_lastSavedAyah == ayahNumber) {
-      return;
-    }
-    _lastSavedAyah = ayahNumber;
-    await QuranDataLoader.saveLastRead(widget.surah.number, ayahNumber);
+    // The notifier dedupes on the surah and verse together, so it is safe to
+    // call this freely, and the surah list sees the change immediately.
+    await ref.read(lastReadProvider.notifier).save(widget.surah.number, ayahNumber);
   }
 
-  /// Watch the live scroll position so the read position can be recorded once
-  /// scrolling settles. Attaching has to wait for the list to be laid out,
-  /// so this is called from the post-frame callback and is idempotent.
-  void _watchScrollPosition() {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    final position = _scrollController.position;
-    if (identical(position, _watchedPosition)) {
-      return;
-    }
-    _watchedPosition?.isScrollingNotifier.removeListener(_handleScrollActivity);
-    _watchedPosition = position;
-    position.isScrollingNotifier.addListener(_handleScrollActivity);
-  }
+  static const Duration _scrollSettle = Duration(milliseconds: 250);
 
-  void _handleScrollActivity() {
-    // Only record once the list has come to rest, so a single flick does not
-    // write a preference entry for every ayah it passes over.
-    if (_watchedPosition?.isScrollingNotifier.value ?? true) {
-      return;
-    }
-    final verse = _topmostVisibleVerse();
-    if (verse != null) {
-      _saveLastRead(verse);
-    }
+  /// Record the read position once scrolling settles.
+  ///
+  /// Driven by the controller rather than by the position's scrolling state.
+  /// The notifier approach this replaces was fragile: a wheel scroll goes idle
+  /// before the new offset is applied, so the position was read from the
+  /// previous frame's layout and lagged behind where the reader actually was.
+  /// A debounce off the controller always sees post-layout geometry, and still
+  /// writes once per gesture rather than once per ayah scrolled past.
+  void _handleScroll() {
+    _scrollSettleTimer?.cancel();
+    _scrollSettleTimer = Timer(_scrollSettle, () {
+      if (!mounted) {
+        return;
+      }
+      final verse = _topmostVisibleVerse();
+      if (verse != null) {
+        _saveLastRead(verse);
+      }
+    });
   }
 
   /// The verse number of the topmost ayah still visible in the viewport, or
@@ -830,7 +887,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           final ayahs = snapshot.data ?? const <AyahEntry>[];
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _watchScrollPosition();
             if (_pendingScrollToAyah == null) {
               return;
             }

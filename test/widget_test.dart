@@ -27,6 +27,33 @@ const SurahSummary _testSurah = SurahSummary(
   verseCount: 286,
 );
 
+/// A small synthetic corpus. The Arabic field is placeholder Latin text on
+/// purpose: no Quranic Arabic is generated here, and these tests only care
+/// about verse numbering and layout.
+Map<String, dynamic> _fakeCorpus({int verses = 60}) => {
+      'surahs': [
+        for (final surah in [
+          {'number': 2, 'name': 'Al-Baqarah', 'place': 'madinah'},
+          {'number': 36, 'name': 'Ya-Sin', 'place': 'makkah'},
+        ])
+          {
+            'number': surah['number'],
+            'name_arabic': '',
+            'name_simple': surah['name'],
+            'revelation_place': surah['place'],
+            'verse_count': verses,
+            'ayahs': [
+              for (var v = 1; v <= verses; v++)
+                {
+                  'verse_number': v,
+                  'text': 'placeholder arabic line $v',
+                  'translation': 'Placeholder translation for verse $v.',
+                },
+            ],
+          },
+      ],
+    };
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -63,28 +90,35 @@ void main() {
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp(home: ReaderPage(surah: _testSurah))),
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: ReaderPage(surah: _testSurah)),
+      ),
     );
     // Deliberately not pumpAndSettle: the reader shows a progress indicator
-    // while the corpus loads, and that animation never settles. The read
-    // position is recorded on open, so one frame is enough.
+    // while the corpus loads, and that animation never settles. One frame runs
+    // the post-frame callback that records the position.
     await tester.pump();
 
     // Reading is enough on its own: last-read must not depend on bookmarking.
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt('last_read_surah'), 2);
-    expect(prefs.getInt('last_read_ayah'), 1);
+    expect(container.read(lastReadProvider)?.surahNumber, 2);
+    expect(container.read(lastReadProvider)?.ayahNumber, 1);
   });
 
   testWidgets('jumping to an ayah records that ayah as the read position', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      ProviderScope(
+      UncontrolledProviderScope(
+        container: container,
         child: MaterialApp(
           home: ReaderPage(surah: _testSurah, initialAyah: 255),
         ),
@@ -92,9 +126,8 @@ void main() {
     );
     await tester.pump();
 
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt('last_read_surah'), 2);
-    expect(prefs.getInt('last_read_ayah'), 255);
+    expect(container.read(lastReadProvider)?.surahNumber, 2);
+    expect(container.read(lastReadProvider)?.ayahNumber, 255);
   });
 
   testWidgets('a citation can move the user to the reader tab', (
@@ -166,6 +199,104 @@ void main() {
     await tester.pump();
 
     expect(find.text('Question'), findsOneWidget);
+  });
+
+  testWidgets('reading a second surah replaces the first as the resume point', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    QuranDataLoader.seedCorpusForTests(_fakeCorpus());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final surahs = await QuranDataLoader.loadSurahs();
+    final baqarah = surahs.firstWhere((s) => s.number == 2);
+    final yaSin = surahs.firstWhere((s) => s.number == 36);
+
+    Future<void> open(SurahSummary surah) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: ReaderPage(
+              key: ValueKey('reader-${surah.number}'),
+              surah: surah,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    await open(baqarah);
+    expect(container.read(lastReadProvider)?.surahNumber, 2);
+
+    // The bug this guards: the resume point stayed on whatever was stored
+    // first, no matter how many other surahs were opened afterwards.
+    await open(yaSin);
+    expect(container.read(lastReadProvider)?.surahNumber, 36);
+
+  });
+
+  testWidgets('scrolling partway updates the recorded ayah', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    QuranDataLoader.seedCorpusForTests(_fakeCorpus());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final surahs = await QuranDataLoader.loadSurahs();
+    final baqarah = surahs.firstWhere((s) => s.number == 2);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: ReaderPage(surah: baqarah)),
+      ),
+    );
+    // Let the seeded corpus resolve and the list lay out.
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(ListView), findsOneWidget);
+    expect(container.read(lastReadProvider)?.ayahNumber, 1);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -1500));
+    await tester.pump();
+    // Past the scroll-settle debounce.
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final recorded = container.read(lastReadProvider);
+    expect(recorded?.surahNumber, 2);
+    expect(
+      recorded?.ayahNumber,
+      greaterThan(1),
+      reason: 'scrolling should move the read position off verse 1',
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('last_read_ayah'), recorded?.ayahNumber);
+  });
+
+  test('the last-read notifier writes through and dedupes', () async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final notifier = container.read(lastReadProvider.notifier);
+    await notifier.save(18, 67);
+    expect(container.read(lastReadProvider)?.surahNumber, 18);
+
+    // Same position again is a no-op; a different one must land.
+    await notifier.save(18, 67);
+    await notifier.save(2, 255);
+    expect(container.read(lastReadProvider)?.surahNumber, 2);
+    expect(container.read(lastReadProvider)?.ayahNumber, 255);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('last_read_surah'), 2);
+    expect(prefs.getInt('last_read_ayah'), 255);
   });
 
   test('reference parsing rejects anything outside the corpus', () {
