@@ -722,6 +722,53 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 }
 
+/// Permanent guardrail required by the brief: the assistant must always state
+/// that it is a study aid, not a religious authority. It is intentionally not
+/// dismissible and sits outside the scrolling area so it cannot be scrolled
+/// away or buried in settings.
+class _AssistantDisclaimer extends StatelessWidget {
+  const _AssistantDisclaimer();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiary.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.tertiary.withOpacity(0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: theme.colorScheme.tertiary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'This is a study tool drawing on the Yusuf Ali translation. '
+              'It is not a substitute for a qualified scholar, and it does not '
+              'give religious rulings. For rulings, ask a qualified scholar or '
+              'your local imam.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 13,
+                height: 1.4,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AssistantPage extends StatefulWidget {
   const AssistantPage({super.key});
 
@@ -850,6 +897,8 @@ class _AssistantPageState extends State<AssistantPage> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
           child: Column(
             children: [
+              const _AssistantDisclaimer(),
+              const SizedBox(height: 12),
               Expanded(
                 child: ListView(
                   children: [

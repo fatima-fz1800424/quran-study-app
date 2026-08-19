@@ -19,8 +19,29 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const ProviderScope(child: QuranStudyApp()));
 
-    expect(find.text('Surah List'), findsOneWidget);
+    expect(find.text('Quran'), findsOneWidget);
     expect(find.text('Reader'), findsNothing);
+  });
+
+  testWidgets('assistant shows the study-aid disclaimer with no interaction', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(const ProviderScope(child: QuranStudyApp()));
+
+    // Switch to the Assistant tab the way a user would. Only the nav label is
+    // on stage here; the offstage tab's own AppBar title is not matched.
+    await tester.tap(find.text('Assistant'));
+    await tester.pump();
+
+    // The disclaimer is a required guardrail: on screen as soon as the tab
+    // opens, with no scrolling and no menu, and no way to dismiss it.
+    final disclaimer = find.textContaining(
+      'not a substitute for a qualified scholar',
+    );
+    expect(disclaimer, findsOneWidget);
+    expect(find.textContaining('Yusuf Ali translation'), findsOneWidget);
+    expect(find.byIcon(Icons.close), findsNothing);
   });
 
   test('theme and font size state stay synchronized and clamp sensibly', () async {
