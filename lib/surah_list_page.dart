@@ -393,7 +393,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _showTranslations = true;
   Set<String> _bookmarks = <String>{};
   final Map<int, GlobalKey> _ayahKeys = <int, GlobalKey>{};
+  final Map<int, int> _indexToVerse = <int, int>{};
+  final GlobalKey _listKey = GlobalKey();
+  final ScrollController _scrollController = ScrollController();
   int? _pendingScrollToAyah;
+  int? _lastSavedAyah;
+  ScrollPosition? _watchedPosition;
 
   @override
   void initState() {
@@ -401,6 +406,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     _pendingScrollToAyah = widget.initialAyah;
     _ayahsFuture = QuranDataLoader.loadAyahsForSurah(widget.surah.number);
     _loadBookmarks();
+    // Opening a surah is itself a read position. Record it now so that resume
+    // works even if the reader is closed again without scrolling or bookmarking.
+    _saveLastRead(widget.initialAyah ?? 1);
+  }
+
+  @override
+  void dispose() {
+    _watchedPosition?.isScrollingNotifier.removeListener(_handleScrollActivity);
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBookmarks() async {
@@ -416,11 +431,77 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Future<void> _toggleBookmark(int ayahNumber) async {
     await QuranDataLoader.toggleBookmark(widget.surah.number, ayahNumber);
     await _loadBookmarks();
-    await QuranDataLoader.saveLastRead(widget.surah.number, ayahNumber);
+    await _saveLastRead(ayahNumber);
   }
 
   Future<void> _saveLastRead(int ayahNumber) async {
+    if (_lastSavedAyah == ayahNumber) {
+      return;
+    }
+    _lastSavedAyah = ayahNumber;
     await QuranDataLoader.saveLastRead(widget.surah.number, ayahNumber);
+  }
+
+  /// Watch the live scroll position so the read position can be recorded once
+  /// scrolling settles. Attaching has to wait for the list to be laid out,
+  /// so this is called from the post-frame callback and is idempotent.
+  void _watchScrollPosition() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (identical(position, _watchedPosition)) {
+      return;
+    }
+    _watchedPosition?.isScrollingNotifier.removeListener(_handleScrollActivity);
+    _watchedPosition = position;
+    position.isScrollingNotifier.addListener(_handleScrollActivity);
+  }
+
+  void _handleScrollActivity() {
+    // Only record once the list has come to rest, so a single flick does not
+    // write a preference entry for every ayah it passes over.
+    if (_watchedPosition?.isScrollingNotifier.value ?? true) {
+      return;
+    }
+    final verse = _topmostVisibleVerse();
+    if (verse != null) {
+      _saveLastRead(verse);
+    }
+  }
+
+  /// The verse number of the topmost ayah still visible in the viewport, or
+  /// null while the list has not been laid out yet.
+  int? _topmostVisibleVerse() {
+    final listContext = _listKey.currentContext;
+    if (listContext == null) {
+      return null;
+    }
+    final listBox = listContext.findRenderObject() as RenderBox?;
+    if (listBox == null || !listBox.hasSize) {
+      return null;
+    }
+    final viewportTop = listBox.localToGlobal(Offset.zero).dy;
+
+    int? topmostIndex;
+    for (final entry in _ayahKeys.entries) {
+      final ayahContext = entry.value.currentContext;
+      if (ayahContext == null) {
+        continue;
+      }
+      final box = ayahContext.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) {
+        continue;
+      }
+      if (box.localToGlobal(Offset.zero).dy + box.size.height <= viewportTop) {
+        continue; // scrolled fully past the top of the viewport
+      }
+      if (topmostIndex == null || entry.key < topmostIndex) {
+        topmostIndex = entry.key;
+      }
+    }
+
+    return topmostIndex == null ? null : _indexToVerse[topmostIndex];
   }
 
   void _showSettingsSheet() {
@@ -618,6 +699,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           final ayahs = snapshot.data ?? const <AyahEntry>[];
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            _watchScrollPosition();
             if (_pendingScrollToAyah == null) {
               return;
             }
@@ -630,6 +712,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           });
 
           return ListView.separated(
+            key: _listKey,
+            controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
             itemCount: ayahs.length,
             separatorBuilder: (_, __) => Divider(
@@ -638,8 +722,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             ),
             itemBuilder: (context, index) {
               final ayah = ayahs[index];
-              final key = GlobalKey();
-              _ayahKeys[index] = key;
+              // Keys must be stable across rebuilds: they anchor both the
+              // scroll-to-ayah jump and the read-position tracking.
+              final key = _ayahKeys.putIfAbsent(index, () => GlobalKey());
+              _indexToVerse[index] = ayah.verseNumber;
               final isBookmarked = _bookmarks.contains('${widget.surah.number}:${ayah.verseNumber}');
               final showTranslation = _showTranslations && ayah.translation.trim().isNotEmpty;
 

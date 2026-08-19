@@ -111,3 +111,56 @@ Next steps recommended:
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
 
+## Related-verses cross-surah gate (2026-08-19)
+
+The `/related` endpoint has to answer two different questions, and conflating
+them was making it return nothing for verses that do have a good match:
+
+1. Does this verse resonate outside its own surah at all? If not, its
+   same-surah matches are almost always surah-level topical bleed - adjacent
+   verses reusing the same vocabulary - rather than genuine thematic links.
+2. Is a given candidate strong enough to show?
+
+Question 2 needs a higher bar than question 1. Using one threshold for both
+meant a verse could be denied its own strong match because no *other* surah
+cleared the display bar. Measured on `all-mpnet-base-v2`, with
+`same_surah_penalty=0.03`:
+
+| Verse | Best cross-surah | Same-surah passing 0.70 |
+|-------|------------------|-------------------------|
+| 112:1 | 0.7373           | none                    |
+| 18:60 | 0.6579           | 18:64 at 0.7081         |
+| 16:68 | 0.6378           | 16:6, 16:15, 16:80      |
+| 2:255 | 0.7969           | six, incl. 2:163        |
+
+18:60 and 16:68 are indistinguishable under a single threshold: both have zero
+cross-surah candidates above 0.70. But 18:60 does reach outside surah 18
+(52:6 at 0.658) while 16:68 does not reach past 0.638 - and 18:64 is the
+continuation of the same Musa and Khidr narrative, which is exactly the kind of
+link the endpoint exists to surface.
+
+Decision: separate the two thresholds.
+
+- `cross_surah_gate_score` (default 0.65) - the verse must have at least one
+  cross-surah candidate this strong, or the endpoint returns nothing.
+- `min_score` (default 0.70) - what an individual result must score to be shown.
+- `max_same_surah` (default 2) - caps results from the target's own surah only,
+  as a hard cap.
+
+Resulting behaviour: 112:1 and 2:255 unchanged, 18:60 returns 18:64, 16:68
+stays empty.
+
+Caveat: the design generalises, but the 0.65 constant is calibrated on these
+four verses and sits in a narrow 0.638-0.658 band. It should be re-checked
+against a larger reference set before it is treated as settled.
+
+Two related bugs were fixed at the same time:
+
+- `max_same_surah` was capping *every* surah at that count, not just the
+  target's. It is documented as same-surah capping, and capping unrelated
+  surahs silently dropped good cross-surah results.
+- When the cap left fewer than `k` results, the code backfilled with the very
+  candidates the cap had just excluded, so the cap was advisory rather than a
+  cap. It is now hard: those slots go to the next best cross-surah verse or go
+  unfilled.
+

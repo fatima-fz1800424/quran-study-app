@@ -234,11 +234,36 @@ class QuranRetriever:
         rerank: bool = False,
         rerank_top_n: int = 20,
         same_surah_penalty: float = 0.03,
+        cross_surah_gate_score: float | None = None,
     ) -> list[dict]:
         """Return the top-k most similar verses to the given surah:verse using embeddings.
 
         Excludes the verse itself and immediate neighbours (previous 2 and next 2 verses in the same surah).
         Supports optional same-surah capping, minimum-score filtering, and optional cross-encoder reranking.
+
+        Selection rules, applied in order:
+        - Same-surah candidates are penalised by `same_surah_penalty`, and all
+          ranking and filtering below uses that adjusted score.
+        - Cross-surah gate: unless some cross-surah candidate scores at least
+          `cross_surah_gate_score`, return nothing. A verse whose only matches
+          sit inside its own surah is treated as surah-level topical bleed
+          rather than as having genuine thematic links.
+        - Candidates below `min_score` are then dropped.
+        - Return the top `k` by adjusted score, drawn from both cross-surah and
+          same-surah candidates, with at most `max_same_surah` verses from the
+          target's own surah.
+
+        The gate and the display threshold are deliberately separate. The gate
+        asks whether this verse resonates outside its own surah at all, which is
+        a weaker question than whether a given match is strong enough to show;
+        so `cross_surah_gate_score` is normally set lower than `min_score`. That
+        lets a verse with one strong same-surah match still surface it, provided
+        the verse has some cross-surah resonance, while a verse with no reach
+        beyond its own surah returns nothing. When `cross_surah_gate_score` is
+        None it falls back to `min_score`, making the two questions identical.
+
+        `max_same_surah` caps only verses from the target's own surah. It does
+        not limit how many verses may come from any other single surah.
         """
         if model_name is None:
             model_name = 'sentence-transformers/all-mpnet-base-v2'
@@ -318,6 +343,17 @@ class QuranRetriever:
                     new_candidates.append((int(idx), float(item['score']), float(item['score']), int(self.chunks[int(idx)].get('surah_number', -1))))
             candidates = new_candidates
 
+        # Cross-surah gate. Evaluated before the display threshold, and against
+        # the gate score rather than min_score, so that asking "does this verse
+        # reach outside its own surah at all" stays a weaker test than asking
+        # "is this match strong enough to show".
+        gate_score = cross_surah_gate_score if cross_surah_gate_score is not None else min_score
+        cross_surah = [c for c in candidates if c[3] != target_surah]
+        if gate_score is not None:
+            cross_surah = [c for c in cross_surah if c[2] >= float(gate_score)]
+        if not cross_surah:
+            return []
+
         # apply minimum score threshold on adjusted score if requested (after rerank if used)
         if min_score is not None:
             candidates = [c for c in candidates if c[2] >= float(min_score)]
@@ -325,35 +361,22 @@ class QuranRetriever:
         if not candidates:
             return []
 
-        # require at least one cross-surah candidate above threshold before returning any same-surah matches
-        cross_surah_present = any(c[3] != target_surah for c in candidates)
-        if not cross_surah_present:
-            # no cross-surah match above threshold; return empty rather than intra-surah style matches
-            return []
-
-        # enforce same-surah cap if requested
+        # The gate is passed, so rank cross-surah and same-surah candidates
+        # together by adjusted score and take the top k, allowing at most
+        # `max_same_surah` verses from the target's own surah. The cap is a hard
+        # limit: once it is reached, further same-surah candidates are skipped
+        # and the slots go to the next best cross-surah verses, or go unfilled.
         top_results: list[dict] = []
-        if max_same_surah is None or max_same_surah >= len(candidates):
-            selected = candidates[:k]
-        else:
-            per_surah_counts: dict[int, int] = {}
-            selected = []
-            for idx, orig, adjusted, s in candidates:
-                count = per_surah_counts.get(s, 0)
-                if count < int(max_same_surah):
-                    selected.append((idx, orig, adjusted, s))
-                    per_surah_counts[s] = count + 1
-                if len(selected) >= k:
-                    break
-            # if not enough selected, fill with remaining best regardless of surah
-            if len(selected) < k:
-                already = {t[0] for t in selected}
-                for idx, orig, adjusted, s in candidates:
-                    if idx in already:
-                        continue
-                    selected.append((idx, orig, adjusted, s))
-                    if len(selected) >= k:
-                        break
+        selected: list[tuple[int, float, float, int]] = []
+        same_surah_used = 0
+        for candidate in candidates:  # already ordered by adjusted score
+            if candidate[3] == target_surah:
+                if max_same_surah is not None and same_surah_used >= int(max_same_surah):
+                    continue
+                same_surah_used += 1
+            selected.append(candidate)
+            if len(selected) >= k:
+                break
 
         for idx, orig, adjusted, s in selected[:k]:
             chunk = self.chunks[idx]

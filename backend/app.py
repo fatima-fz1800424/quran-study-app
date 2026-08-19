@@ -153,12 +153,15 @@ def related(
     rerank: bool = False,
     min_score: float = 0.70,
     max_same_surah: int = 2,
+    cross_surah_gate_score: float = 0.65,
 ) -> dict[str, Any]:
     """Related verses endpoint.
 
     Defaults:
-    - `min_score=0.75`
-    - `max_same_surah=2`
+    - `min_score=0.70` - how strong a match must be to be shown
+    - `cross_surah_gate_score=0.65` - how much cross-surah resonance the verse
+      must have before any results are returned at all
+    - `max_same_surah=2` - caps results from the target's own surah only
     - `rerank=False` (optional)
 
     Returns fewer than `k` results when the threshold filters them; returns an empty list if nothing qualifies.
@@ -172,6 +175,7 @@ def related(
             max_same_surah=max_same_surah,
             min_score=min_score,
             rerank=rerank,
+            cross_surah_gate_score=cross_surah_gate_score,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

@@ -11,6 +11,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:quran_study_app/main.dart';
+import 'package:quran_study_app/surah_list_page.dart';
+
+/// A stand-in surah for reader tests. Only `number` affects what these tests
+/// assert, and the Arabic name is left empty rather than typed out, so no
+/// Quranic text or name is reproduced here. Loading the real surah from the
+/// bundle is not an option in `testWidgets`: `rootBundle` needs real async,
+/// which the fake-async test zone does not run.
+const SurahSummary _testSurah = SurahSummary(
+  number: 2,
+  nameArabic: '',
+  nameSimple: 'Al-Baqarah',
+  revelationPlace: 'madinah',
+  verseCount: 286,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +56,44 @@ void main() {
     expect(disclaimer, findsOneWidget);
     expect(find.textContaining('Yusuf Ali translation'), findsOneWidget);
     expect(find.byIcon(Icons.close), findsNothing);
+  });
+
+  testWidgets('opening the reader records the last-read position', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      ProviderScope(child: MaterialApp(home: ReaderPage(surah: _testSurah))),
+    );
+    // Deliberately not pumpAndSettle: the reader shows a progress indicator
+    // while the corpus loads, and that animation never settles. The read
+    // position is recorded on open, so one frame is enough.
+    await tester.pump();
+
+    // Reading is enough on its own: last-read must not depend on bookmarking.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('last_read_surah'), 2);
+    expect(prefs.getInt('last_read_ayah'), 1);
+  });
+
+  testWidgets('jumping to an ayah records that ayah as the read position', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ReaderPage(surah: _testSurah, initialAyah: 255),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('last_read_surah'), 2);
+    expect(prefs.getInt('last_read_ayah'), 255);
   });
 
   test('theme and font size state stay synchronized and clamp sensibly', () async {
