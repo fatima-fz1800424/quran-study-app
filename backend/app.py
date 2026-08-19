@@ -70,6 +70,19 @@ class GeminiReply(NamedTuple):
     text: str
     usage: dict[str, Any]
 
+
+class AskPlan(NamedTuple):
+    """Everything decided about a question before the model is involved.
+
+    Shared by /ask and /ask/plan so the two cannot disagree about whether a
+    question is refused or which verses ground it.
+    """
+
+    status: str  # 'ok', 'refused_ruling' or 'no_source'
+    chunks: list[dict]
+    message: str  # the reply for a terminal status, empty when status is 'ok'
+    timings: dict[str, float]
+
 load_dotenv()
 
 logger = logging.getLogger('quran_backend')
@@ -187,9 +200,25 @@ def _call_gemini(prompt: str) -> GeminiReply:
             ),
         )
     except Exception as exc:  # pragma: no cover - external API behavior
+        # The client shows `detail` to the user, so it must be readable and must
+        # not carry provider internals. The full error goes to the log instead.
+        logger.exception('Gemini call failed')
+        text = str(exc)
+        if '429' in text or 'RESOURCE_EXHAUSTED' in text:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    'The study assistant has reached its request limit for now. '
+                    'Reading, search and bookmarks still work. Please try asking '
+                    'again later.'
+                ),
+            ) from exc
         raise HTTPException(
             status_code=502,
-            detail=f'Gemini API call failed: {exc}',
+            detail=(
+                'The study assistant could not be reached. Please try again in '
+                'a moment.'
+            ),
         ) from exc
 
     metadata = getattr(response, 'usage_metadata', None)
@@ -202,6 +231,76 @@ def _call_gemini(prompt: str) -> GeminiReply:
         'total_tokens': getattr(metadata, 'total_token_count', None),
     }
     return GeminiReply(text=response.text or '', usage=usage)
+
+
+def _plan_answer(question: str) -> AskPlan:
+    """Decide, without calling the model, whether and how to answer.
+
+    Reports its own sub-stage timings so both callers keep the guardrail and
+    retrieval legs separated rather than lumped together.
+    """
+    timings: dict[str, float] = {}
+
+    start = time.perf_counter()
+    ruling = is_ruling_question(question)
+    timings['guardrail_ms'] = round((time.perf_counter() - start) * 1000, 1)
+    if ruling:
+        return AskPlan('refused_ruling', [], RULING_REDIRECT_MESSAGE, timings)
+
+    # Use the winning retrieval variant: dense mpnet embeddings by default
+    start = time.perf_counter()
+    chunks = relevant_chunks(
+        retriever.search(question, k=5, model_name=RETRIEVAL_MODEL)
+    )
+    timings['retrieval_ms'] = round((time.perf_counter() - start) * 1000, 1)
+
+    if not chunks:
+        return AskPlan('no_source', [], NO_SOURCE_MESSAGE, timings)
+    return AskPlan('ok', chunks, '', timings)
+
+
+@app.post('/ask/plan')
+def ask_plan(payload: dict[str, str]) -> dict[str, Any]:
+    """The fast half of /ask: refusal decision and retrieval, no model call.
+
+    Exists so the client can show real progress instead of an unbroken spinner.
+    A refusal comes back in single-digit milliseconds and the verses in tens, so
+    the user learns their question was refused, or sees which verses were found,
+    long before the answer is composed. Deliberately not a streaming endpoint:
+    the Flutter web client buffers streamed responses whole, so a second short
+    request achieves what SSE could not, without a new dependency.
+
+    /ask does not trust this and repeats the work, so a client that skips this
+    endpoint gets identical behaviour.
+    """
+    started = time.perf_counter()
+    question = (payload or {}).get('question', '').strip()
+    if not question:
+        raise HTTPException(status_code=400, detail='Question is required.')
+
+    plan = _plan_answer(question)
+    elapsed = round((time.perf_counter() - started) * 1000, 1)
+    logger.info(
+        '/ask/plan status=%s total=%.0fms %s',
+        plan.status,
+        elapsed,
+        ' '.join(f'{k}={v}ms' for k, v in plan.timings.items()),
+    )
+
+    return {
+        'status': plan.status,
+        'question': question,
+        'references': [chunk['reference'] for chunk in plan.chunks],
+        'verses': [
+            {
+                'reference': chunk['reference'],
+                'translation_text': chunk['translation_text'],
+            }
+            for chunk in plan.chunks
+        ],
+        'answer': plan.message,
+        'timings': {**plan.timings, 'total_ms': elapsed},
+    }
 
 
 @app.post('/ask')
@@ -228,42 +327,26 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
         )
         return {**result, 'timings': timings}
 
-    # Ruling questions never reach the model. Refusing here rather than in the
-    # prompt means the refusal cannot be talked around and costs no model call.
+    # Ruling questions never reach the model, and retrieval below has a
+    # relevance floor: retrieval always returns its k best however weak, and
+    # without a floor an off-topic question arrives dressed as sourced context.
+    # Both decisions live in _plan_answer so /ask/plan cannot disagree.
+    plan = _plan_answer(question)
+    timings.update(plan.timings)
     stage_start = time.perf_counter()
-    ruling = is_ruling_question(question)
-    stage_start = mark('guardrail_ms', stage_start)
-    if ruling:
+    if plan.status != 'ok':
         return finish({
-            'status': 'refused_ruling',
+            'status': plan.status,
             'question': question,
             'system_prompt': SYSTEM_PROMPT,
             'context': '',
             'references': [],
             'citations': [],
-            'answer': RULING_REDIRECT_MESSAGE,
+            'answer': plan.message,
             'usage': {},
         })
 
-    # Use the winning retrieval variant: dense mpnet embeddings by default
-    chunks = retriever.search(question, k=5, model_name=RETRIEVAL_MODEL)
-
-    # Retrieval always returns its k best, however weak. Without a floor, an
-    # off-topic question arrives at the model dressed as sourced context.
-    chunks = relevant_chunks(chunks)
-    stage_start = mark('retrieval_ms', stage_start)
-    if not chunks:
-        return finish({
-            'status': 'no_source',
-            'question': question,
-            'system_prompt': SYSTEM_PROMPT,
-            'context': '',
-            'references': [],
-            'citations': [],
-            'answer': NO_SOURCE_MESSAGE,
-            'usage': {},
-        })
-
+    chunks = plan.chunks
     references = [chunk['reference'] for chunk in chunks]
     context = '\n\n'.join(
         f"[{chunk['reference']}] {chunk['translation_text']}" for chunk in chunks

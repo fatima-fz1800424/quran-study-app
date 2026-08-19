@@ -113,6 +113,87 @@ Next steps recommended:
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
 
+## /ask latency, and why the answer is not streamed (2026-08-20)
+
+Profiled per stage against a running server. The starting point was an 8.6s
+median /ask, of which 98.7% was the model call.
+
+| Change | /ask median | Note |
+|--------|-------------|------|
+| Baseline | 8270 ms | 706-858 thinking tokens per call |
+| `max_output_tokens=300` + brevity prompt | 4470 ms | broken - see below |
+| plus `thinking_level=MINIMAL` | 2372 / 4140 ms | 2 samples only |
+
+Two findings worth keeping:
+
+- **The model thinks by default, heavily.** It spent 706-858 thinking tokens
+  against 121-271 output tokens, to summarise five verses handed to it in the
+  prompt. `thinking_level=MINIMAL` was the single largest win.
+- **`max_output_tokens` is a shared budget with thinking on this model.**
+  Capping at 300 while thinking was still enabled left 9-12 tokens for the
+  answer and truncated every reply to a 46-character uncited fragment. The
+  citation guardrail caught all four and returned `no_source`, which is the
+  system working, but the cap is only safe with thinking minimised. The
+  constant in `app.py` records this so it is not re-raised in isolation.
+
+Retrieval was also renormalising the whole 6236x768 embedding matrix on every
+request to recompute a constant. Normalising once at load took /search from
+113ms to 37ms median, with byte-identical `/related` results.
+
+The `/ask` measurements above are only 2 samples at the final setting, because
+profiling exhausted the API quota. Baseline variance was 6.5-17.4s, so the
+final median should be re-measured before it is trusted.
+
+### Streaming the answer was rejected
+
+Three options were considered for making the wait feel shorter:
+
+- (a) stream the answer text, holding it back until a verified citation appears
+- (b) stream freely and retract if the citation check fails
+- (c) do not stream the answer; report progress stages instead
+
+**Chosen: (c).** (b) is unacceptable: retracting text a reader has already taken
+in is worse in a religious-study context than making them wait. (a) was
+rejected because it makes a safety property depend on a formatting preference -
+the citation check could only stay non-blocking if the model reliably cites
+early, so a prompt-level style choice would silently determine whether answers
+are verified before display. At 2.4-4.1s the perceived gain did not justify
+that coupling.
+
+(a) remains available if latency regresses badly, but it would need the prompt
+to mandate a leading reference, and that coupling should be recorded explicitly
+if it is ever adopted.
+
+Implementation of (c): `/ask/plan` runs the refusal check and retrieval only,
+with no model call, and the client calls it before `/ask`. Measured: a refused
+question comes back in 2.3ms, and the retrieved verses in 29.5ms, so the user
+sees a refusal almost instantly, or reads the verses that were found while the
+answer is still being written. `/ask` repeats the work rather than trusting the
+client, so skipping `/ask/plan` changes nothing about the result.
+
+Note this is not streaming transport. Flutter web's `BrowserClient` buffers a
+streamed response whole, so server-sent events would have needed a new
+fetch-based HTTP dependency and still delivered nothing incrementally. Two short
+requests achieve the same result with no dependency.
+
+### Model errors are rephrased before they reach the client
+
+The client displays the backend's `detail` string directly, and a quota failure
+was surfacing `429 RESOURCE_EXHAUSTED` plus the raw provider JSON to users.
+Quota exhaustion now returns 503 with a readable sentence that also points out
+that reading and search still work; other model failures return 502 with a
+generic sentence. The full error goes to the log. Tests assert that no provider
+internals appear in either message.
+
+### `/search` will not load an arbitrary model
+
+`search(model_name=...)` used to be silently ignored after startup, returning
+results from whichever model loaded first. Honouring it correctly created a
+worse problem: loading a model means downloading weights and embedding 6236
+verses, roughly 15 minutes of CPU, so any caller could trigger that repeatedly.
+`initialize()` now reloads properly when the requested model differs, and the
+HTTP endpoint accepts only pre-benchmarked models, returning 400 otherwise.
+
 ## Assistant refusal is enforced in code (2026-08-20)
 
 Refusal used to live only in the Gemini system prompt. A prompt fails open,

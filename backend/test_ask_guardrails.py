@@ -324,6 +324,102 @@ def test_prompt_states_the_hard_constraints(fake_retriever, gemini):
     assert 'cite' in prompt
 
 
+def test_plan_refuses_a_ruling_without_retrieval_or_model(
+    fake_retriever, model_must_not_be_called
+):
+    result = app_module.ask_plan({'question': 'is music haram'})
+
+    assert result['status'] == 'refused_ruling'
+    assert result['answer'] == guardrails.RULING_REDIRECT_MESSAGE
+    assert result['verses'] == []
+    assert fake_retriever.calls == []
+
+
+def test_plan_returns_the_verses_without_calling_the_model(
+    fake_retriever, model_must_not_be_called
+):
+    result = app_module.ask_plan({'question': 'what does the Quran say about patience'})
+
+    assert result['status'] == 'ok'
+    assert result['references'] == ['2:153', '3:200']
+    assert [v['reference'] for v in result['verses']] == ['2:153', '3:200']
+    assert all(v['translation_text'] for v in result['verses'])
+    # No answer yet - that is the point of the endpoint.
+    assert result['answer'] == ''
+
+
+def test_plan_reports_no_source_when_nothing_is_relevant(
+    monkeypatch, model_must_not_be_called
+):
+    weak = [{'reference': '18:32', 'translation_text': 'Placeholder.', 'score': 0.2}]
+    monkeypatch.setattr(app_module, 'retriever', _FakeRetriever(weak))
+
+    result = app_module.ask_plan({'question': 'how do I change a car tyre'})
+
+    assert result['status'] == 'no_source'
+    assert result['verses'] == []
+
+
+@pytest.mark.parametrize(
+    'question',
+    ['is music haram', 'how do I perform ghusl', 'what does the Quran say about patience'],
+)
+def test_plan_and_ask_never_disagree(question, fake_retriever, gemini):
+    """The fast path must not tell the user something the real path contradicts."""
+    planned = app_module.ask_plan({'question': question})
+    answered = app_module.ask({'question': question})
+
+    assert planned['status'] == answered['status']
+    assert planned['references'] == answered['references']
+
+
+def test_quota_errors_become_readable_without_leaking_provider_detail(monkeypatch):
+    from types import SimpleNamespace
+
+    class _Models:
+        def generate_content(self, **kwargs):
+            raise RuntimeError(
+                "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': "
+                "'You exceeded your current quota', 'status': 'RESOURCE_EXHAUSTED'}}"
+            )
+
+    monkeypatch.setenv('GEMINI_API_KEY', 'test-key')
+    monkeypatch.setattr(
+        app_module, 'genai',
+        SimpleNamespace(Client=lambda api_key=None: SimpleNamespace(models=_Models())),
+    )
+
+    with pytest.raises(HTTPException) as raised:
+        app_module._call_gemini('prompt')
+
+    assert raised.value.status_code == 503
+    detail = raised.value.detail
+    assert 'request limit' in detail
+    for leak in ['429', 'RESOURCE_EXHAUSTED', 'quota', '{']:
+        assert leak not in detail, f'leaked {leak!r} to the user'
+
+
+def test_other_model_errors_are_also_readable(monkeypatch):
+    from types import SimpleNamespace
+
+    class _Models:
+        def generate_content(self, **kwargs):
+            raise RuntimeError('SSLError: certificate verify failed at 10.0.0.1:443')
+
+    monkeypatch.setenv('GEMINI_API_KEY', 'test-key')
+    monkeypatch.setattr(
+        app_module, 'genai',
+        SimpleNamespace(Client=lambda api_key=None: SimpleNamespace(models=_Models())),
+    )
+
+    with pytest.raises(HTTPException) as raised:
+        app_module._call_gemini('prompt')
+
+    assert raised.value.status_code == 502
+    assert 'SSLError' not in raised.value.detail
+    assert '10.0.0.1' not in raised.value.detail
+
+
 def test_response_carries_per_stage_timings(fake_retriever, gemini):
     result = app_module.ask({'question': 'what does the Quran say about patience'})
 

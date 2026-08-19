@@ -1009,8 +1009,60 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   String? _question;
   String? _answer;
   String? _error;
+  String? _stage;
   List<String> _references = const [];
 
+  static const String _stageSearching = 'Searching the translation for relevant verses';
+  static const String _stageComposing = 'Composing an answer from those verses';
+
+  /// POST to the backend, returning the decoded body, or null after recording
+  /// an error for display.
+  Future<Map<String, dynamic>?> _post(String path, String question) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$kQuranBackendBaseUrl$path'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'question': question}),
+      );
+
+      if (!mounted) {
+        return null;
+      }
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final decoded = jsonDecode(response.body);
+      final detail = decoded is Map<String, dynamic> ? decoded['detail'] : null;
+      setState(() {
+        // The backend phrases its own errors for readers, so show them as sent.
+        _error = detail is String
+            ? detail
+            : 'The assistant could not answer that question.';
+      });
+      return null;
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = 'Unable to reach the backend at $kQuranBackendBaseUrl. '
+              'The backend needs to be running.';
+        });
+      }
+      return null;
+    }
+  }
+
+  /// Ask in two steps so the wait is legible.
+  ///
+  /// The first call does only the refusal check and retrieval, and returns in
+  /// milliseconds; the second composes the answer and is the slow one. That
+  /// means a refused question is answered almost immediately, and an accepted
+  /// one shows which verses were found while the answer is still being written.
+  ///
+  /// The answer itself is deliberately not streamed - see docs/DECISIONS.md.
+  /// Streaming text would put words on screen before the citation check could
+  /// run, and that check is what keeps answers grounded.
   Future<void> _submitQuestion() async {
     final question = _controller.text.trim();
     // Enter and the send button can both fire; ignore a second send while one
@@ -1025,47 +1077,50 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
       _answer = null;
       _error = null;
       _references = const [];
+      _stage = _stageSearching;
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$kQuranBackendBaseUrl/ask'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'question': question}),
-      );
-
-      if (!mounted) {
+      final plan = await _post('/ask/plan', question);
+      if (!mounted || plan == null) {
         return;
       }
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final references = ((plan['references'] as List<dynamic>?) ?? const [])
+          .map((item) => item.toString())
+          .toList();
+      final planStatus = (plan['status'] as String?) ?? 'ok';
+
+      // A refusal or a no-source answer is final; there is nothing to compose.
+      if (planStatus != 'ok') {
         setState(() {
-          _answer = (decoded['answer'] as String?) ?? 'No answer returned.';
-          _references = ((decoded['references'] as List<dynamic>?) ?? const [])
-              .map((item) => item.toString())
-              .toList();
+          _answer = (plan['answer'] as String?) ?? '';
+          _references = references;
         });
-      } else {
-        final decoded = jsonDecode(response.body);
-        final detail = decoded is Map<String, dynamic> ? decoded['detail'] : null;
-        setState(() {
-          _error = detail is String
-              ? detail
-              : 'The assistant could not answer that question.';
-        });
-      }
-    } catch (error) {
-      if (!mounted) {
         return;
       }
+
       setState(() {
-        _error = 'Unable to reach the backend at $kQuranBackendBaseUrl/ask. The backend needs to be running.';
+        _references = references;
+        _stage = _stageComposing;
+      });
+
+      final full = await _post('/ask', question);
+      if (!mounted || full == null) {
+        return;
+      }
+
+      setState(() {
+        _answer = (full['answer'] as String?) ?? 'No answer returned.';
+        _references = ((full['references'] as List<dynamic>?) ?? const [])
+            .map((item) => item.toString())
+            .toList();
       });
     } finally {
       if (mounted) {
         setState(() {
           _loading = false;
+          _stage = null;
         });
       }
     }
@@ -1216,10 +1271,14 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                           ],
                         ),
                       ),
-                    if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 20),
-                        child: Center(child: CircularProgressIndicator()),
+                    if (_loading && _stage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: _ProgressCard(
+                          stage: _stage!,
+                          references: _references,
+                          onReferenceTap: _openReference,
+                        ),
                       ),
                   ],
                 ),
@@ -1265,6 +1324,86 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// What the assistant is doing right now, and what it has found so far.
+///
+/// Replaces a bare spinner. The stages are named rather than generic, and the
+/// verses appear as soon as retrieval returns them, so the wait for the answer
+/// is spent reading real results rather than watching an indicator.
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({
+    required this.stage,
+    required this.references,
+    required this.onReferenceTap,
+  });
+
+  final String stage;
+  final List<String> references;
+  final void Function(String reference) onReferenceTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  stage,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (references.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              references.length == 1
+                  ? 'Found 1 verse'
+                  : 'Found ${references.length} verses',
+              style: theme.textTheme.titleMedium?.copyWith(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: references
+                  .map(
+                    (reference) => ActionChip(
+                      label: Text(reference),
+                      avatar: const Icon(Icons.menu_book_outlined, size: 16),
+                      tooltip: 'Open $reference in the reader',
+                      onPressed: () => onReferenceTap(reference),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
       ),
     );
   }
