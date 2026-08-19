@@ -10,6 +10,27 @@
 - Fetched on: `2026-08-19`
 - Reason: These are the exact endpoints used to validate the local corpus: the chapters endpoint provides the independent per-surah ayah counts, and the Uthmani verses endpoint provides the verified Arabic text for each ayah.
 
+## English translation candidate status
+
+- Candidate translation: Tanzil Project, English translation `Name: Yusuf Ali`, `Translator: Abdullah Yusuf Ali`, `Language: English`, `ID: en.yusufali`, `Last Update: May 10, 2013`, `Source: Tanzil.net`.
+- Licence status: explicit licence is available from Tanzil; the text is distributed under the Tanzil Project terms and the public `https://tanzil.net/trans/en.yusufali?type=xml` file contains the exact header block below:
+
+  ```text
+  # --------------------------------------------------------------------
+  #
+  #  Quran Translation
+  #  Name: Yusuf Ali
+  #  Translator: Abdullah Yusuf Ali
+  #  Language: English
+  #  ID: en.yusufali
+  #  Last Update: May 10, 2013
+  #  Source: Tanzil.net
+  #
+  # --------------------------------------------------------------------
+  ```
+
+- Authorisation: the Tanzil Project granted the required permission in the public terms for the Quran text and translation files by indicating that the text can be used in a website or application if the Tanzil Project is clearly indicated and a link to tanzil.net is included, and we are obeying the verbatim-copy requirement and attribution requirement. We are using one translation only, so the additional “more than three translations” link-back requirement is not triggered, but we still include attribution in-app.
+
 ## Data import strategy
 
 - Import runs as a standalone Dart script under `tool/`.
