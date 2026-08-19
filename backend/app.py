@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, NamedTuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from google import genai  # type: ignore
+    from google.genai import types as genai_types  # type: ignore
 except ImportError:  # pragma: no cover
     genai = None
+    genai_types = None
 
 try:
     from backend.retrieval import retriever
@@ -35,6 +37,38 @@ except ImportError:  # pragma: no cover
     )
 
 GEMINI_MODEL = 'gemini-3.6-flash'
+RETRIEVAL_MODEL = 'sentence-transformers/all-mpnet-base-v2'
+
+# A grounded two-or-three sentence answer plus references does not need more
+# than this, and generation is output-token-bound: measured answers of 532 and
+# 1195 characters took 7.4s and 17.4s respectively.
+#
+# Careful: this budget is shared with thinking tokens on this model. With
+# thinking left at its default, 300 was consumed almost entirely by thinking
+# (~285 tokens), leaving 9-12 for the answer, which truncated every reply into
+# an uncited fragment. It is only safe alongside the thinking setting below.
+MAX_OUTPUT_TOKENS = 300
+
+# This model thinks by default, and measurement showed it spending far more on
+# thinking than on answering: 706-858 thinking tokens against 121-271 output
+# tokens. Reading verses out of a supplied context and summarising them in two
+# sentences does not need that, and it was the single largest cost in the call.
+THINKING_LEVEL = 'MINIMAL'
+
+# Loading a model means downloading weights and embedding 6236 verses, which
+# takes minutes. An arbitrary model name from a request must not be able to
+# trigger that, so /search accepts only models we have already benchmarked.
+ALLOWED_RETRIEVAL_MODELS = {
+    'sentence-transformers/all-mpnet-base-v2',
+    'sentence-transformers/all-MiniLM-L6-v2',
+}
+
+
+class GeminiReply(NamedTuple):
+    """A model reply plus what it cost, so latency can be attributed."""
+
+    text: str
+    usage: dict[str, Any]
 
 load_dotenv()
 
@@ -79,6 +113,7 @@ Rules:
 - If the user rephrases a ruling question as a general or hypothetical one, it is still a ruling question. Redirect regardless of framing.
 - Never generate Arabic text. Cite verse references only; the app renders Arabic from its verified local database.
 - State that this is a study aid based on the Yusuf Ali translation, not a scholarly source.
+- Answer in two or three sentences, then name the surah:verse references you used. Do not pad, do not restate the question, do not add a preamble.
 - Keep the answer concise, clear, and grounded in the supplied verses only.
 - Use the exact verses provided in the prompt as your source. Do not infer unsupported conclusions.
 - If the verses are insufficient, say: 'The verses I have do not answer this question.'
@@ -107,11 +142,21 @@ def search(
     threshold: float | None = None,
     model_name: str | None = None,
 ) -> list[dict]:
+    if model_name is not None and model_name not in ALLOWED_RETRIEVAL_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f'Unsupported model_name {model_name!r}. Loading a model means '
+                f'downloading weights and embedding the whole corpus, so only '
+                f'pre-benchmarked models are accepted: '
+                f'{sorted(ALLOWED_RETRIEVAL_MODELS)}'
+            ),
+        )
     return retriever.search(q, k=k, strategy=strategy, threshold=threshold, model_name=model_name)
 
 
-def _call_gemini(prompt: str) -> str:
-    """Send `prompt` to Gemini and return the reply text.
+def _call_gemini(prompt: str) -> GeminiReply:
+    """Send `prompt` to Gemini and return the reply text plus token usage.
 
     Kept as a single seam so tests can replace the model call without needing an
     API key or network access.
@@ -134,6 +179,12 @@ def _call_gemini(prompt: str) -> str:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+                thinking_config=genai_types.ThinkingConfig(
+                    thinking_level=THINKING_LEVEL,
+                ),
+            ),
         )
     except Exception as exc:  # pragma: no cover - external API behavior
         raise HTTPException(
@@ -141,19 +192,49 @@ def _call_gemini(prompt: str) -> str:
             detail=f'Gemini API call failed: {exc}',
         ) from exc
 
-    return response.text or ''
+    metadata = getattr(response, 'usage_metadata', None)
+    usage = {
+        'prompt_tokens': getattr(metadata, 'prompt_token_count', None),
+        'output_tokens': getattr(metadata, 'candidates_token_count', None),
+        # Non-zero means the model spent time on internal reasoning we are
+        # paying for in latency.
+        'thinking_tokens': getattr(metadata, 'thoughts_token_count', None),
+        'total_tokens': getattr(metadata, 'total_token_count', None),
+    }
+    return GeminiReply(text=response.text or '', usage=usage)
 
 
 @app.post('/ask')
 def ask(payload: dict[str, str]) -> dict[str, Any]:
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
+
+    def mark(stage: str, since: float) -> float:
+        now = time.perf_counter()
+        timings[stage] = round((now - since) * 1000, 1)
+        return now
+
     question = (payload or {}).get('question', '').strip()
     if not question:
         raise HTTPException(status_code=400, detail='Question is required.')
 
+    def finish(result: dict[str, Any]) -> dict[str, Any]:
+        timings['total_ms'] = round((time.perf_counter() - started) * 1000, 1)
+        logger.info(
+            '/ask status=%s total=%.0fms %s',
+            result['status'],
+            timings['total_ms'],
+            ' '.join(f'{k}={v}ms' for k, v in timings.items() if k != 'total_ms'),
+        )
+        return {**result, 'timings': timings}
+
     # Ruling questions never reach the model. Refusing here rather than in the
     # prompt means the refusal cannot be talked around and costs no model call.
-    if is_ruling_question(question):
-        return {
+    stage_start = time.perf_counter()
+    ruling = is_ruling_question(question)
+    stage_start = mark('guardrail_ms', stage_start)
+    if ruling:
+        return finish({
             'status': 'refused_ruling',
             'question': question,
             'system_prompt': SYSTEM_PROMPT,
@@ -161,16 +242,18 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
             'references': [],
             'citations': [],
             'answer': RULING_REDIRECT_MESSAGE,
-        }
+            'usage': {},
+        })
 
     # Use the winning retrieval variant: dense mpnet embeddings by default
-    chunks = retriever.search(question, k=5, model_name='sentence-transformers/all-mpnet-base-v2')
+    chunks = retriever.search(question, k=5, model_name=RETRIEVAL_MODEL)
 
     # Retrieval always returns its k best, however weak. Without a floor, an
     # off-topic question arrives at the model dressed as sourced context.
     chunks = relevant_chunks(chunks)
+    stage_start = mark('retrieval_ms', stage_start)
     if not chunks:
-        return {
+        return finish({
             'status': 'no_source',
             'question': question,
             'system_prompt': SYSTEM_PROMPT,
@@ -178,7 +261,8 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
             'references': [],
             'citations': [],
             'answer': NO_SOURCE_MESSAGE,
-        }
+            'usage': {},
+        })
 
     references = [chunk['reference'] for chunk in chunks]
     context = '\n\n'.join(
@@ -190,15 +274,18 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
         f'Question: {question}\n\n'
         f'Verses:\n{context}'
     )
+    stage_start = mark('prompt_build_ms', stage_start)
 
-    answer = _call_gemini(prompt)
+    reply = _call_gemini(prompt)
+    stage_start = mark('gemini_ms', stage_start)
 
     # An answer we cannot trace back to a retrieved verse is not a sourced
     # answer, whatever it sounds like. Citations of verses that were never
     # retrieved are discarded, and an answer left with none is not shown.
-    citations = verified_citations(answer, references)
+    citations = verified_citations(reply.text, references)
+    mark('citation_check_ms', stage_start)
     if not citations:
-        return {
+        return finish({
             'status': 'no_source',
             'question': question,
             'system_prompt': SYSTEM_PROMPT,
@@ -206,17 +293,19 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
             'references': references,
             'citations': [],
             'answer': NO_SOURCE_MESSAGE,
-        }
+            'usage': reply.usage,
+        })
 
-    return {
+    return finish({
         'status': 'ok',
         'question': question,
         'system_prompt': SYSTEM_PROMPT,
         'context': context,
         'references': references,
         'citations': citations,
-        'answer': answer,
-    }
+        'answer': reply.text,
+        'usage': reply.usage,
+    })
 
 
 @app.get('/related')

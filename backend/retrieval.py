@@ -22,6 +22,13 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r"\w+", (text or '').lower())
 
 
+def _normalize_rows(matrix: np.ndarray) -> np.ndarray:
+    """Scale each row to unit length, leaving all-zero rows alone."""
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    return (matrix / norms).astype(np.float32)
+
+
 class QuranRetriever:
     def __init__(self) -> None:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,11 +40,31 @@ class QuranRetriever:
         self.model_name = MODEL_NAME
 
     def initialize(self, model_name: str | None = None) -> None:
-        if model_name is not None:
-            self.model_name = model_name
+        requested = model_name or self.model_name
 
-        if self.model is not None and self.embeddings is not None:
+        # A different model needs its own weights and its own embeddings. This
+        # used to return early whenever anything was loaded, which silently
+        # served results from whichever model happened to load first.
+        already_loaded = (
+            self.model is not None
+            and self.embeddings is not None
+            and getattr(self, '_loaded_model_name', None) == requested
+        )
+        if already_loaded:
+            self.model_name = requested
             return
+
+        if self.model is not None and getattr(self, '_loaded_model_name', None) != requested:
+            logger.info(
+                'Retriever: switching model from %s to %s; reloading embeddings',
+                getattr(self, '_loaded_model_name', None),
+                requested,
+            )
+            self.model = None
+            self.embeddings = None
+            self.bm25_index = None
+
+        self.model_name = requested
 
         total_start = time.perf_counter()
         logger.info('Retriever startup: loading corpus...')
@@ -57,7 +84,10 @@ class QuranRetriever:
 
         logger.info('Retriever startup: building or loading embeddings...')
         embeddings_start = time.perf_counter()
-        self.embeddings = self._load_or_build_embeddings()
+        # Normalise once, here. Every query previously renormalised the whole
+        # 6236x768 matrix before its dot product, which cost ~40ms per request
+        # to reproduce a result that does not change between requests.
+        self.embeddings = _normalize_rows(self._load_or_build_embeddings())
         logger.info('Retriever startup: embeddings ready in %.2fs', time.perf_counter() - embeddings_start)
         logger.info('Retriever startup: complete in %.2fs', time.perf_counter() - total_start)
 
@@ -112,16 +142,13 @@ class QuranRetriever:
             batch_size=1,
         )[0]
 
-        norm = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
-        norm = np.where(norm == 0, 1.0, norm)
-        normalized_embeddings = self.embeddings / norm
+        # self.embeddings is already row-normalised at load time, so only the
+        # query vector needs scaling here.
         query_norm = np.linalg.norm(query_vector)
-        if query_norm == 0:
-            query_vector = query_vector / 1.0
-        else:
+        if query_norm != 0:
             query_vector = query_vector / query_norm
 
-        return normalized_embeddings @ query_vector
+        return self.embeddings @ query_vector
 
     def _format_result(self, chunk: dict, score: float) -> dict:
         return {
@@ -288,12 +315,8 @@ class QuranRetriever:
         if target_idx is None:
             raise ValueError(f'Verse {surah}:{verse} not found in corpus')
 
-        emb = self.embeddings.astype(np.float32)
-        # normalize embeddings if not already
-        norms = np.linalg.norm(emb, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1.0, norms)
-        normalized = emb / norms
-
+        # Already row-normalised at load time; no need to redo it per call.
+        normalized = self.embeddings
         target_vec = normalized[target_idx]
         # similarity scores
         scores = normalized @ target_vec

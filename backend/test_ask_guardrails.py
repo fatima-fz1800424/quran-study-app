@@ -55,10 +55,12 @@ def gemini(monkeypatch):
         def __init__(self):
             self.prompts = []
             self.reply = 'Patience is described in 2:153.'
+            self.usage = {'prompt_tokens': 400, 'output_tokens': 60,
+                          'thinking_tokens': 0, 'total_tokens': 460}
 
         def __call__(self, prompt):
             self.prompts.append(prompt)
-            return self.reply
+            return app_module.GeminiReply(text=self.reply, usage=self.usage)
 
     recorder = Recorder()
     monkeypatch.setattr(app_module, '_call_gemini', recorder)
@@ -320,6 +322,38 @@ def test_prompt_states_the_hard_constraints(fake_retriever, gemini):
     assert 'never generate arabic' in prompt
     assert 'scholar' in prompt
     assert 'cite' in prompt
+
+
+def test_response_carries_per_stage_timings(fake_retriever, gemini):
+    result = app_module.ask({'question': 'what does the Quran say about patience'})
+
+    timings = result['timings']
+    for stage in ['guardrail_ms', 'retrieval_ms', 'prompt_build_ms',
+                  'gemini_ms', 'citation_check_ms', 'total_ms']:
+        assert stage in timings, f'missing stage {stage}'
+        assert timings[stage] >= 0
+    assert timings['total_ms'] >= timings['gemini_ms']
+
+
+def test_refusal_timings_skip_the_stages_it_skips(fake_retriever, model_must_not_be_called):
+    timings = app_module.ask({'question': 'is music haram'})['timings']
+
+    assert 'guardrail_ms' in timings
+    # Nothing downstream ran, so those stages must not be reported as having.
+    assert 'retrieval_ms' not in timings
+    assert 'gemini_ms' not in timings
+
+
+def test_search_rejects_a_model_it_has_not_benchmarked(fake_retriever):
+    """Loading a model costs minutes of CPU; a request must not trigger it."""
+    with pytest.raises(HTTPException) as raised:
+        app_module.search(q='patience', model_name='attacker/enormous-model')
+    assert raised.value.status_code == 400
+    assert 'model_name' in str(raised.value.detail)
+
+    # An allowlisted name is passed through to the retriever.
+    app_module.search(q='patience', model_name=app_module.RETRIEVAL_MODEL)
+    assert fake_retriever.calls == ['patience']
 
 
 def test_empty_question_is_rejected(fake_retriever, model_must_not_be_called):
