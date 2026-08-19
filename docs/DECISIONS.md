@@ -65,8 +65,9 @@
 
 ## Retrieval variant decision
 
-- Evaluation set expanded to 20 queries in `backend/eval_queries.json`, including hard concept queries (anxiety, depression, gratitude), surah-name queries, and two deliberately negative queries where the correct answer is that nothing relevant should rank highly.
-- Aggregation rule: the 18 positive queries were used for the reported recall@5 and MRR values; the two negative queries were checked separately to confirm they do not return relevant hits in the top ranks.
+- Evaluation set expanded to 17 queries in `backend/eval_queries.json`, including hard concept queries (anxiety, depression, gratitude), surah-name queries, and two deliberately negative queries where the correct answer is that nothing relevant should rank highly.
+- Aggregation rule: the 15 positive queries were used for the reported recall@5 and MRR values; the two negative queries were checked separately to confirm they do not return relevant hits in the top ranks.
+- Correction (2026-08-20): this section previously said 20 queries and 18 positive. Both were wrong. `eval_queries.json` has only ever been committed with 17 keys, 15 of which carry `expected_refs`, and `run_variant_sweep.py` divides by the count of queries that have expected refs. The metrics below were therefore always computed over 15 positive queries. Re-running the sweep on 2026-08-20 reproduced every figure exactly, so the numbers stand and only the counts were mis-stated.
 - Measured results on the 20-query set:
   - Baseline (current-verse-only embedding): recall@5 = 0.231, MRR = 0.344
   - Weighted-context embedding: recall@5 = 0.269, MRR = 0.363
@@ -83,7 +84,8 @@
 
 ## Latest retrieval variant sweep (2026-08-19)
 
-- Evaluation set: `backend/eval_queries.json` (18 positive queries used for aggregate metrics)
+- Evaluation set: `backend/eval_queries.json` (15 positive queries used for aggregate metrics; see the correction note above)
+- Re-run on 2026-08-20 against the same file reproduced all six variants' recall@5 and MRR to three decimal places, and the same bees top-5 per variant.
 - Variants tested and measured results:
   - `dense_default` (all-MiniLM-L6-v2): recall@5 = 0.261, MRR = 0.391
   - `rerank` (all-MiniLM-L6-v2 + CrossEncoder rerank): recall@5 = 0.294, MRR = 0.406
@@ -110,6 +112,40 @@ Next steps recommended:
 
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
+
+## Assistant refusal is enforced in code (2026-08-20)
+
+Refusal used to live only in the Gemini system prompt. A prompt fails open,
+varies between calls, and cannot be tested without spending a model call, while
+CLAUDE.md asks for ruling questions to be detected. `backend/guardrails.py` now
+enforces refusal, a retrieval relevance floor, and citation verification in our
+own process. The prompt rules stay as a second layer.
+
+The detector has four triggers: ruling vocabulary; a religion-or-law frame
+("what does Islam say about ..."); a personal modal plus an act of worship
+("can I pray without wudu"); and a how-to-perform framing plus a rite ("the
+proper way to baptize an infant in Islam"). The last two are conjunctions on
+purpose - either half alone appears in ordinary study questions.
+
+Questions about what *the Quran* says are deliberately never a trigger, so
+thematic search keeps working.
+
+Measured on 28 study questions and 13 ruling questions: all 13 refused, all 28
+allowed. Adding the how-to trigger refused 8 more ruling questions and did not
+newly refuse any study question. Of the 17 eval queries, one is now refused
+before retrieval: "what is the proper way to baptize an infant in Islam", one of
+the two deliberate negatives. It carries no `expected_refs`, so aggregate
+metrics are unaffected - but the guardrail, not retrieval, is what now handles
+it, and that query no longer exercises what it was written to exercise.
+
+Known gap: the relevance floor does not catch in-domain but unanswerable
+questions. The two designed negatives score 0.4677 and 0.3990, both above the
+0.35 floor. No floor separates them from legitimate low scorers such as "how
+should I treat my parents" at 0.4927. The floor filters off-domain noise; it
+cannot filter plausible-sounding questions the corpus does not answer. The other
+negative, "what is the best Islamic stock portfolio strategy", is still not
+refused: it is financial rather than worship practice, and no narrow pattern for
+it looked defensible.
 
 ## Related-verses cross-surah gate (2026-08-19)
 

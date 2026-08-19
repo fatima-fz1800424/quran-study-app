@@ -122,23 +122,70 @@ def test_other_ruling_phrasings_are_redirected(
     assert app_module.ask({'question': question})['status'] == 'refused_ruling'
 
 
-@pytest.mark.parametrize(
-    'question',
-    [
-        'what does the Quran say about patience',
-        'what does the Quran say about fasting',
-        'what is 2:255 about',
-        'explain the story of Musa and Khidr',
-        'which verses mention orphans',
-        'summarise the themes of surah 16',
-        'can you explain the context of 9:5',
-    ],
-)
+# How-to-perform-a-rite questions. Asking to be taught the correct performance
+# of a rite is a question about validity, so it belongs with a scholar.
+WORSHIP_PRACTICE_QUESTIONS = [
+    'what is the proper way to baptize an infant in Islam',
+    'what is the correct way to perform wudu',
+    'how do I perform ghusl',
+    'how should I pray when travelling',
+    'how many rakah in the maghrib prayer',
+    'what are the conditions for hajj',
+    'what are the pillars of prayer',
+    'what is the proper way to give zakat',
+    'what is the right method of burial in Islam',
+]
+
+
+@pytest.mark.parametrize('question', WORSHIP_PRACTICE_QUESTIONS)
+def test_worship_practice_questions_are_redirected(
+    question, fake_retriever, model_must_not_be_called
+):
+    result = app_module.ask({'question': question})
+
+    assert result['status'] == 'refused_ruling'
+    assert fake_retriever.calls == []
+
+
+STUDY_QUESTIONS = [
+    'what does the Quran say about patience',
+    'what does the Quran say about fasting',
+    'what is 2:255 about',
+    'explain the story of Musa and Khidr',
+    'which verses mention orphans',
+    'summarise the themes of surah 16',
+    'can you explain the context of 9:5',
+    # Wider set. Over-refusal is the failure mode these guard against, so this
+    # list is deliberately longer than the refusal lists and includes phrasings
+    # that sit close to a trigger without being a ruling question.
+    'what does the Quran say about mercy',
+    'which surah mentions the bees',
+    'what is the best way to understand this verse',
+    'how is Maryam described in the Quran',
+    'tell me about the people of the cave',
+    'what does 18:60 refer to',
+    'where does the Quran mention Pharaoh',
+    'explain the word sabr as it appears in translation',
+    'which verses describe the creation of the heavens',
+    'what does the Quran say about prayer',
+    'what does the Quran say about marriage',
+    'what does the Quran say about wine',
+    'how many times is Musa named in the Quran',
+    'what is the historical context of surah 9',
+    'what does the translation say about justice',
+    'give me verses about hardship and relief',
+    'what is the theme of surah al-baqarah',
+]
+
+
+@pytest.mark.parametrize('question', STUDY_QUESTIONS)
 def test_study_questions_are_not_refused(question, fake_retriever, gemini):
     """The guardrail must not swallow the app's actual purpose.
 
-    Note the last case: "can you explain ..." is a personal modal in form but
-    asks about the text, so it must still reach the model.
+    Several cases sit deliberately close to a trigger: "can you explain ..." is
+    a modal but asks about the text; "the best way to understand this verse" is
+    a how-to framing with no rite attached; "about prayer" and "about marriage"
+    name practice topics without asking for a ruling on them.
     """
     result = app_module.ask({'question': question})
 
@@ -291,11 +338,31 @@ def test_is_ruling_question_boundaries():
     assert guardrails.is_ruling_question('can I pray without wudu')
     assert guardrails.is_ruling_question('should I fast while travelling')
     assert guardrails.is_ruling_question('what does Islam say about music')
+    assert guardrails.is_ruling_question('the proper way to perform wudu')
 
     assert not guardrails.is_ruling_question('what does the Quran say about music')
     assert not guardrails.is_ruling_question('which verses mention prayer')
     assert not guardrails.is_ruling_question('')
     assert not guardrails.is_ruling_question(None)
+
+
+def test_howto_and_modal_triggers_need_both_halves():
+    """Both conjunction triggers must stay conjunctions.
+
+    A how-to framing with no rite, or a modal with no rite, is a study question.
+    If either half ever fires alone, ordinary questions start being refused.
+    """
+    # how-to framing, no rite attached
+    assert not guardrails.is_ruling_question('what is the best way to read this surah')
+    assert not guardrails.is_ruling_question('what are the requirements for a good translation')
+    # rite named, but no how-to or modal asking for a ruling on it
+    assert not guardrails.is_ruling_question('which verses mention wudu')
+    assert not guardrails.is_ruling_question('the Quran on fasting and travel')
+    # modal, no rite attached
+    assert not guardrails.is_ruling_question('can I search for verses about mercy')
+    # both halves present
+    assert guardrails.is_ruling_question('how do I perform the funeral prayer')
+    assert guardrails.is_ruling_question('can I fast on a journey')
 
 
 def test_extract_citations_ignores_non_references():

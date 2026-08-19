@@ -88,7 +88,29 @@ _PRACTICE_TOPICS = re.compile(
     r'|alcohol|wine|beer|drink|pork|swine|gambling|lottery|riba|interest'
     r'|hijab|niqab|veil|awrah|beard'
     r'|music|dancing|tattoo|tattoos|smoking|vaping'
+    r'|rakah|rakat|rakaat|rakah|adhan|azan|janazah|funeral|burial'
+    r'|baptize|baptise|baptism|circumcision|aqiqah'
     r')\b',
+    re.IGNORECASE,
+)
+
+# "What is the proper way to ...", "how do I perform ...": asking to be taught
+# the correct performance of a rite is a question about validity, which is a
+# ruling. Distinct from asking what the text says about a rite.
+_PRACTICE_HOWTO = re.compile(
+    r'\b(?:the\s+)?(?:proper|correct|right|prescribed|approved|acceptable)\s+'
+    r'(?:way|ways|method|manner|procedure|steps|order)\s+(?:to|of|for)\b'
+    r'|\bhow\s+(?:do|does|should|can|must)\s+(?:i|we|one|a\s+muslim)\s+'
+    r'(?:perform|do|make|offer|observe|complete|pray|fast|give|carry\s+out)\b'
+    r'|\bhow\s+many\s+(?:rakah|rakat|rakaat|times|days)\b'
+    r'|\bwhat\s+are\s+the\s+(?:conditions|requirements|rules|steps|pillars)\s+(?:for|of)\b',
+    re.IGNORECASE,
+)
+
+# Markers that a question is pitched at the religion or its practice rather than
+# at the text. "The Quran" is deliberately absent, as in _RELIGION_FRAME.
+_ISLAM_MARKER = re.compile(
+    r'\b(?:in\s+islam|islam|islamic|muslim|muslims|sharia|shariah|sunnah|hadith)\b',
     re.IGNORECASE,
 )
 
@@ -100,11 +122,17 @@ _CITATION = re.compile(r'\b(\d{1,3}):(\d{1,3})\b')
 def is_ruling_question(question: str) -> bool:
     """True when the question asks for a religious ruling rather than for study.
 
-    Three independent triggers, any of which is enough:
+    Four independent triggers, any of which is enough:
     - ruling vocabulary, e.g. "is music haram"
     - a religion-or-law frame, e.g. "what does Islam say about music"
     - a personal modal about an act of worship or a family matter, e.g.
       "can I pray without wudu"
+    - a how-to-perform framing aimed at the religion or a rite, e.g. "what is
+      the proper way to baptize an infant in Islam"
+
+    The last two triggers are conjunctions on purpose. "What is the best way to
+    understand this verse" is a how-to framing with no rite attached and stays
+    allowed; "can you explain 2:255" is a modal with no rite and stays allowed.
 
     A question about what the Quran says on a topic is not a ruling question and
     is left alone, which keeps thematic search working.
@@ -116,7 +144,12 @@ def is_ruling_question(question: str) -> bool:
         return True
     if _RELIGION_FRAME.search(text):
         return True
-    return bool(_PERSONAL_MODAL.search(text) and _PRACTICE_TOPICS.search(text))
+    if _PERSONAL_MODAL.search(text) and _PRACTICE_TOPICS.search(text):
+        return True
+    return bool(
+        _PRACTICE_HOWTO.search(text)
+        and (_ISLAM_MARKER.search(text) or _PRACTICE_TOPICS.search(text))
+    )
 
 
 def extract_citations(text: str) -> list[str]:
