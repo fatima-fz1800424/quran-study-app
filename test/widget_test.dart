@@ -6,6 +6,7 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -123,6 +124,48 @@ void main() {
       find.textContaining('not a substitute for a qualified scholar'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('Shift+Enter adds a newline, Enter submits', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const QuranStudyApp(),
+      ),
+    );
+    container.read(selectedTabProvider.notifier).state = kAssistantTabIndex;
+    await tester.pump();
+
+    final field = find.byType(TextField);
+    await tester.tap(field);
+    await tester.pump();
+    await tester.enterText(field, 'first line');
+
+    // Shift+Enter must stay in the field as a newline.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+
+    expect(
+      tester.widget<TextField>(field).controller!.text,
+      contains('\n'),
+      reason: 'Shift+Enter should insert a newline, not submit',
+    );
+    expect(find.text('Question'), findsNothing);
+
+    // Plain Enter submits: the question card appears, set synchronously before
+    // the request goes out.
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(find.text('Question'), findsOneWidget);
   });
 
   test('reference parsing rejects anything outside the corpus', () {

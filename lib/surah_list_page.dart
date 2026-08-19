@@ -1013,7 +1013,9 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
 
   Future<void> _submitQuestion() async {
     final question = _controller.text.trim();
-    if (question.isEmpty) {
+    // Enter and the send button can both fire; ignore a second send while one
+    // request is still outstanding.
+    if (question.isEmpty || _loading) {
       return;
     }
 
@@ -1067,6 +1069,43 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
         });
       }
     }
+  }
+
+  /// Send on Enter, newline on Shift+Enter.
+  ///
+  /// Both branches are handled here rather than delegated. [TextInputAction]
+  /// applies to the field as a whole and cannot tell the two apart, and once
+  /// the action is `send` the field stops inserting newlines on Enter
+  /// altogether - so Shift+Enter has to insert one itself or nothing happens.
+  KeyEventResult _handleQuestionKey(FocusNode node, KeyEvent event) {
+    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      _insertNewline();
+      return KeyEventResult.handled;
+    }
+    _submitQuestion();
+    return KeyEventResult.handled;
+  }
+
+  /// Insert a newline at the cursor, replacing any selection.
+  void _insertNewline() {
+    final value = _controller.value;
+    final selection = value.selection;
+    if (!selection.isValid) {
+      _controller.value = TextEditingValue(
+        text: '${value.text}\n',
+        selection: TextSelection.collapsed(offset: value.text.length + 1),
+      );
+      return;
+    }
+    _controller.value = TextEditingValue(
+      text: value.text.replaceRange(selection.start, selection.end, '\n'),
+      selection: TextSelection.collapsed(offset: selection.start + 1),
+    );
   }
 
   /// Hand a cited verse to the reader tab.
@@ -1189,13 +1228,23 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
               Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      minLines: 1,
-                      maxLines: 3,
-                      onSubmitted: (_) => _submitQuestion(),
-                      decoration: const InputDecoration(
-                        hintText: 'Ask about a verse, topic, or theme',
+                    // Enter sends, Shift+Enter inserts a newline. The field is
+                    // multiline, so Flutter would otherwise treat Enter as
+                    // newline and never call onSubmitted at all.
+                    child: Focus(
+                      onKeyEvent: _handleQuestionKey,
+                      child: TextField(
+                        controller: _controller,
+                        minLines: 1,
+                        maxLines: 3,
+                        keyboardType: TextInputType.multiline,
+                        textInputAction: TextInputAction.send,
+                        // Still needed for on-screen keyboards, whose send
+                        // button does not produce a physical key event.
+                        onSubmitted: (_) => _submitQuestion(),
+                        decoration: const InputDecoration(
+                          hintText: 'Ask about a verse, topic, or theme',
+                        ),
                       ),
                     ),
                   ),
