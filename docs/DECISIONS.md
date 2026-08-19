@@ -37,3 +37,8 @@
 - The imported SQL database is committed into the repo as a reviewable asset so the corpus is reproducible and not fetched at app runtime or on first launch.
 - The manifest file records the imported corpus metadata and its total character count for drift detection across later runs, but it does not validate the initial fetch. The initial import is validated by comparing the independently fetched chapter counts to the imported ayah rows.
 - Build-time verification checks the committed SQLite file, the total ayah count, the per-surah counts against the independent chapter endpoint, the Arabic diacritic requirements, the absence of Latin letters, and the recorded corpus character count.
+
+## Stage 5 scope decision
+
+- Scope choice: the assistant should use the Yusuf Ali translation already bundled in `assets/quran_reader_data.json` as the app corpus. Tafsir is out of scope for this release.
+- Reason: no tafsir source with a clear redistribution licence could be identified and verified in time, so tafsir is deferred rather than bundled without a defensible rights basis. The app remains retrieval-grounded for the assistant, but the corpus is the bundled translation corpus and not classical tafsir.
