@@ -80,3 +80,34 @@
 - The exact cluster around 2:271, 2:272, 2:273, and 2:274 therefore becomes a dense semantic neighborhood. Once those neighboring texts are injected into the same vector, the model no longer distinguishes the exact verse boundary as sharply; it treats the block as a single “charity discourse” region rather than as a set of distinct verse-level citations.
 - In practice, that makes the query vector drift toward the whole cluster and pushes some expected references down in rank while boosting adjacent charity verses. The baseline version avoids that because it embeds only the current verse, so the query is anchored to the precise verse text rather than to the local topical neighborhood.
 - This is precisely why we use the larger benchmark to decide: the aggregate improvement is real, but one dense cluster still shows how contextual leakage can hurt discrimnation when the topic is repeated across adjacent verses.
+
+## Latest retrieval variant sweep (2026-08-19)
+
+- Evaluation set: `backend/eval_queries.json` (18 positive queries used for aggregate metrics)
+- Variants tested and measured results:
+  - `dense_default` (all-MiniLM-L6-v2): recall@5 = 0.261, MRR = 0.391
+  - `rerank` (all-MiniLM-L6-v2 + CrossEncoder rerank): recall@5 = 0.294, MRR = 0.406
+  - `hybrid` (dense+BM25 fusion): recall@5 = 0.167, MRR = 0.283
+  - `mpnet` (all-mpnet-base-v2 dense): recall@5 = 0.356, MRR = 0.444
+  - `mpnet_rerank` (all-mpnet-base-v2 initial retrieval + CrossEncoder rerank): recall@5 = 0.278, MRR = 0.452
+  - `threshold` (dense with score cutoff): recall@5 = 0.261, MRR = 0.391
+
+- Bees query (`what does the Quran say about bees`) top-5 per variant:
+  - `dense_default`: ['16:128', '16:74', '16:53', '16:32', '16:83']
+  - `rerank`: ['16:68', '16:80', '16:83', '16:87', '16:98']
+  - `hybrid`: ['16:81', '16:32', '16:98', '16:109', '16:83']
+  - `mpnet`: ['16:48', '16:89', '16:74', '16:37', '16:68']
+  - `mpnet_rerank`: ['16:68', '16:83', '16:87', '16:98', '16:49']
+  - `threshold`: ['16:128', '16:74', '16:53', '16:32', '16:83']
+
+Decision and action taken:
+
+- `all-mpnet-base-v2` (`mpnet`) produced the highest aggregate recall@5 (0.356) and competitive MRR; `mpnet_rerank` gave the highest MRR but lower recall. Prioritizing recall@5 for citation recovery, we select `mpnet` as the default retrieval model for the `/ask` endpoint.
+- The `/ask` endpoint has been updated to call the retriever with `model_name='sentence-transformers/all-mpnet-base-v2'` so the assistant uses the stronger mpnet embeddings by default.
+- The hybrid implementation in `backend/retrieval.py` was also fixed to union dense and BM25 top candidates and normalize scores before fusion (previously it gated candidates by dense-only top-50 and that could exclude BM25-only strong matches).
+
+Next steps recommended:
+
+- Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
+- Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
+

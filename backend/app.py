@@ -1,8 +1,11 @@
+import logging
 import os
+import time
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from google import genai  # type: ignore
@@ -16,7 +19,30 @@ except ImportError:  # pragma: no cover
 
 load_dotenv()
 
+logger = logging.getLogger('quran_backend')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+
 app = FastAPI(title='Quran Study App Backend')
+
+
+@app.on_event('startup')
+async def startup_event() -> None:
+    startup_start = time.perf_counter()
+    logger.info('FastAPI startup: warming Quran retriever...')
+    # warm the retriever with the chosen production model (mpnet)
+    retriever.initialize(model_name='sentence-transformers/all-mpnet-base-v2')
+    logger.info('FastAPI startup: complete in %.2fs', time.perf_counter() - startup_start)
+
+# Development-only CORS: allow Flutter web clients served from localhost on any port.
+# This must be tightened to specific origins before deployment.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['http://localhost', 'http://127.0.0.1'],
+    allow_origin_regex=r'https?://localhost(:\d+)?$|https?://127\.0\.0\.1(:\d+)?$',
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
 
 SYSTEM_PROMPT = """You are a Quran study aid that answers only from the verses provided in the user prompt.
 
@@ -55,8 +81,14 @@ def health() -> dict[str, str]:
 
 
 @app.get('/search')
-def search(q: str, k: int = 5) -> list[dict]:
-    return retriever.search(q, k=k)
+def search(
+    q: str,
+    k: int = 5,
+    strategy: str = 'dense',
+    threshold: float | None = None,
+    model_name: str | None = None,
+) -> list[dict]:
+    return retriever.search(q, k=k, strategy=strategy, threshold=threshold, model_name=model_name)
 
 
 @app.post('/ask')
@@ -65,7 +97,8 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
     if not question:
         raise HTTPException(status_code=400, detail='Question is required.')
 
-    chunks = retriever.search(question, k=5)
+    # Use the winning retrieval variant: dense mpnet embeddings by default
+    chunks = retriever.search(question, k=5, model_name='sentence-transformers/all-mpnet-base-v2')
     references = [chunk['reference'] for chunk in chunks]
     context = '\n\n'.join(
         f"[{chunk['reference']}] {chunk['translation_text']}" for chunk in chunks
@@ -109,4 +142,42 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
         'context': context,
         'references': references,
         'answer': response.text,
+    }
+
+
+@app.get('/related')
+def related(
+    surah: int,
+    verse: int,
+    k: int = 5,
+    rerank: bool = False,
+    min_score: float = 0.70,
+    max_same_surah: int = 2,
+) -> dict[str, Any]:
+    """Related verses endpoint.
+
+    Defaults:
+    - `min_score=0.75`
+    - `max_same_surah=2`
+    - `rerank=False` (optional)
+
+    Returns fewer than `k` results when the threshold filters them; returns an empty list if nothing qualifies.
+    """
+    try:
+        results = retriever.get_related(
+            surah,
+            verse,
+            k=k,
+            model_name='sentence-transformers/all-mpnet-base-v2',
+            max_same_surah=max_same_surah,
+            min_score=min_score,
+            rerank=rerank,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return {
+        'status': 'ok',
+        'query': f'{surah}:{verse}',
+        'results': results,
     }

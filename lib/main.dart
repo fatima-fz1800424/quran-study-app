@@ -76,18 +76,124 @@ class QuranStudyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(appSettingsProvider);
 
+    final light = ThemeData(
+      useMaterial3: true,
+      fontFamily: 'Roboto',
+      scaffoldBackgroundColor: const Color(0xFFF5F0E8),
+      colorScheme: const ColorScheme(
+        brightness: Brightness.light,
+        primary: Color(0xFF7B5E47),
+        onPrimary: Color(0xFFFFFFFF),
+        secondary: Color(0xFFB89269),
+        onSecondary: Color(0xFFFFFFFF),
+        surface: Color(0xFFF9F5F0),
+        onSurface: Color(0xFF201D1A),
+        surfaceContainerHighest: Color(0xFFEDE3D8),
+        onSurfaceVariant: Color(0xFF5E564E),
+        outline: Color(0xFFD8C9B9),
+        error: Color(0xFFB3261E),
+        onError: Color(0xFFFFFFFF),
+        tertiary: Color(0xFF6D7A5A),
+        onTertiary: Color(0xFFFFFFFF),
+      ),
+      appBarTheme: const AppBarTheme(
+        elevation: 0,
+        backgroundColor: Color(0xFFF5F0E8),
+        foregroundColor: Color(0xFF201D1A),
+      ),
+      dividerColor: const Color(0xFFE0D3C4),
+      chipTheme: ChipThemeData(
+        backgroundColor: const Color(0xFFEDE3D8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        side: const BorderSide(color: Color(0xFFD8C9B9)),
+        labelStyle: const TextStyle(color: Color(0xFF201D1A), fontSize: 12),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFF8F3EE),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFD8C9B9)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFD8C9B9)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFF7B5E47)),
+        ),
+      ),
+      textTheme: const TextTheme(
+        titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, letterSpacing: -0.3),
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        bodyMedium: TextStyle(fontSize: 15, height: 1.5),
+      ),
+    );
+
+    final dark = ThemeData(
+      useMaterial3: true,
+      fontFamily: 'Roboto',
+      scaffoldBackgroundColor: const Color(0xFF1D1C1A),
+      colorScheme: const ColorScheme(
+        brightness: Brightness.dark,
+        primary: Color(0xFFB89269),
+        onPrimary: Color(0xFF1D1C1A),
+        secondary: Color(0xFFD1B18A),
+        onSecondary: Color(0xFF1D1C1A),
+        surface: Color(0xFF242220),
+        onSurface: Color(0xFFEFE8E1),
+        surfaceContainerHighest: Color(0xFF2E2A27),
+        onSurfaceVariant: Color(0xFFCBC1B5),
+        outline: Color(0xFF564E48),
+        error: Color(0xFFCF6679),
+        onError: Color(0xFF1D1C1A),
+        tertiary: Color(0xFF8FA07C),
+        onTertiary: Color(0xFF1D1C1A),
+      ),
+      appBarTheme: const AppBarTheme(
+        elevation: 0,
+        backgroundColor: Color(0xFF1D1C1A),
+        foregroundColor: Color(0xFFEFE8E1),
+      ),
+      dividerColor: const Color(0xFF3A3531),
+      chipTheme: ChipThemeData(
+        backgroundColor: const Color(0xFF2D2926),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        side: const BorderSide(color: Color(0xFF4E4842)),
+        labelStyle: const TextStyle(color: Color(0xFFEFE8E1), fontSize: 12),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF282422),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFF4E4842)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFF4E4842)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFB89269)),
+        ),
+      ),
+      textTheme: const TextTheme(
+        titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, letterSpacing: -0.3),
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        bodyMedium: TextStyle(fontSize: 15, height: 1.5),
+      ),
+    );
+
     return MaterialApp(
       title: 'Quran Study App',
       themeMode: settings.themeMode,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green, brightness: Brightness.dark),
-        useMaterial3: true,
-      ),
-      home: const SurahListPage(),
+      theme: light,
+      darkTheme: dark,
+      home: const MainShell(),
     );
   }
 }

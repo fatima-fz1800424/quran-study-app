@@ -79,45 +79,57 @@ def compute_recall_and_mrr(query_results: list[dict], expected_refs: list[str]) 
     return recall, mrr
 
 
-def main() -> None:
+def evaluate_strategy(strategy: str, model_name: str | None = None, threshold: float | None = None) -> tuple[float, float, list[dict]]:
     with EVAL_PATH.open('r', encoding='utf-8') as f:
         eval_data = json.load(f)
 
     client = TestClient(app)
-    per_query = []
     total_recall = 0.0
     total_mrr = 0.0
     positive_count = 0
+    per_query = []
 
     for query, payload in eval_data.items():
         expected_refs = payload['expected_refs']
+        params = {'q': query, 'k': 5, 'strategy': strategy}
+        if threshold is not None:
+            params['threshold'] = threshold
+        if model_name is not None:
+            params['model_name'] = model_name
         if not expected_refs:
-            response = client.get('/search', params={'q': query, 'k': 5})
+            response = client.get('/search', params=params)
             response.raise_for_status()
             results = response.json()
-            print(f"{query}: negative case; top results = {[item['reference'] for item in results[:5]]}")
+            print(f"{strategy} | {query}: negative case; top results = {[item['reference'] for item in results[:5]]}")
             continue
 
-        response = client.get('/search', params={'q': query, 'k': 5})
+        response = client.get('/search', params=params)
         response.raise_for_status()
         results = response.json()
         recall, mrr = compute_recall_and_mrr(results, expected_refs)
         total_recall += recall
         total_mrr += mrr
         positive_count += 1
-        per_query.append(
-            {
-                'query': query,
-                'expected_refs': expected_refs,
-                'recall@5': recall,
-                'mrr': mrr,
-            }
-        )
-        print(f"{query}: recall@5={recall:.3f}, MRR={mrr:.3f}")
+        per_query.append({'query': query, 'expected_refs': expected_refs, 'recall@5': recall, 'mrr': mrr})
+        print(f"{strategy} | {query}: recall@5={recall:.3f}, MRR={mrr:.3f}")
 
-    overall_recall = total_recall / positive_count
-    overall_mrr = total_mrr / positive_count
-    print(f"OVERALL: recall@5={overall_recall:.3f}, MRR={overall_mrr:.3f}")
+    overall_recall = total_recall / positive_count if positive_count else 0.0
+    overall_mrr = total_mrr / positive_count if positive_count else 0.0
+    print(f"{strategy} | OVERALL: recall@5={overall_recall:.3f}, MRR={overall_mrr:.3f}")
+    return overall_recall, overall_mrr, per_query
+
+
+def main() -> None:
+    variants = [
+        ('dense', None, None),
+        ('rerank', None, None),
+        ('hybrid', None, None),
+        ('dense', 'all-mpnet-base-v2', None),
+        ('dense', None, 0.25),
+    ]
+    for strategy, model_name, threshold in variants:
+        evaluate_strategy(strategy=strategy, model_name=model_name, threshold=threshold)
+        print('---')
 
 
 if __name__ == '__main__':
