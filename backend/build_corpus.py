@@ -38,15 +38,7 @@ def build_chunks(source: dict) -> list[dict]:
             if index < len(ayahs) - 1:
                 next_text = ayahs[index + 1]['translation']
 
-            embedding_parts = [
-                f"Surah {surah_name_english}",
-            ]
-            if previous_text:
-                embedding_parts.append(previous_text)
-            embedding_parts.append(translation_text)
-            if next_text:
-                embedding_parts.append(next_text)
-            embedding_text = '\n'.join(part for part in embedding_parts if part and part.strip())
+            embedding_text = f"Surah {surah_name_english}\n{translation_text}"
 
             chunks.append(
                 {

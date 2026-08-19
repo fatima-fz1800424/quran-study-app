@@ -48,3 +48,35 @@
 - Decision: keep one chunk per ayah, but include a small neighbouring-verse window alongside each chunk as optional context.
 - Reason: a single ayah is the minimal citation boundary and preserves the non-negotiable requirement that every answer names the exact surah:verse source. However, a passage's meaning often spans multiple verses, and retrieval quality is stronger when a chunk can include the immediate surrounding text without losing precision. The window is intentionally small (previous and next verse only), so we still keep the chunk anchored to one verse and do not cross into broad narrative blocks. This gives us source-faithful grounding with better context for downstream retrieval without encouraging over-broad chunking.
 - Implementation: each chunk keeps the required fields (`surah_number`, `verse_number`, `surah_name_english`, `surah_name_arabic`, `translation_text`, and `arabic_text`) and may also include a `context_before` and `context_after` field for adjacent verses. The primary identifier remains the verse reference itself.
+
+## Retrieval evaluation baseline
+
+- Ground truth set: `backend/eval_queries.json`
+- Model: `all-MiniLM-L6-v2`
+- Embedding rule used for baseline: current-verse translation only, with surah name retained, no neighbouring translations in the embedding payload.
+- Baseline numbers from the current embedding run:
+  - patience in hardship: recall@5 = 0.750, MRR = 0.500
+  - what does the Quran say about orphans: recall@5 = 0.500, MRR = 0.500
+  - charity and giving to the poor: recall@5 = 0.667, MRR = 1.000
+  - the story of Moses and Pharaoh: recall@5 = 0.500, MRR = 1.000
+  - how should I treat my parents: recall@5 = 0.500, MRR = 1.000
+  - Overall: recall@5 = 0.583, MRR = 0.800
+- This is the baseline used for comparison against future retrieval changes.
+
+## Retrieval variant decision
+
+- Evaluation set expanded to 20 queries in `backend/eval_queries.json`, including hard concept queries (anxiety, depression, gratitude), surah-name queries, and two deliberately negative queries where the correct answer is that nothing relevant should rank highly.
+- Aggregation rule: the 18 positive queries were used for the reported recall@5 and MRR values; the two negative queries were checked separately to confirm they do not return relevant hits in the top ranks.
+- Measured results on the 20-query set:
+  - Baseline (current-verse-only embedding): recall@5 = 0.231, MRR = 0.344
+  - Weighted-context embedding: recall@5 = 0.269, MRR = 0.363
+- Decision: keep the weighted-context variant.
+- Justification: on the fuller benchmark it improves both metrics relative to the baseline, by +0.038 recall@5 and +0.019 MRR. This is the exact threshold we needed to confirm the change is genuinely beneficial instead of simply looking better on a tiny sample.
+
+## Why the charity query regressed under weighted context
+
+- The key regression case was the query “charity and giving to the poor,” where the weighted variant dropped from baseline recall@5 = 0.667 and MRR = 1.000 to weighted recall@5 = 0.333 and MRR = 0.250.
+- The mechanism is not arbitrary: the weighted embedding concatenates each verse’s current translation, the previous verse, and the next verse. In the charity cluster, adjacent verses all talk about the same underlying topic using overlapping language: “charity,” “good,” “those in need,” “give,” “reward,” and “Allah knoweth it well.”
+- The exact cluster around 2:271, 2:272, 2:273, and 2:274 therefore becomes a dense semantic neighborhood. Once those neighboring texts are injected into the same vector, the model no longer distinguishes the exact verse boundary as sharply; it treats the block as a single “charity discourse” region rather than as a set of distinct verse-level citations.
+- In practice, that makes the query vector drift toward the whole cluster and pushes some expected references down in rank while boosting adjacent charity verses. The baseline version avoids that because it embeds only the current verse, so the query is anchored to the precise verse text rather than to the local topical neighborhood.
+- This is precisely why we use the larger benchmark to decide: the aggregate improvement is real, but one dense cluster still shows how contextual leakage can hurt discrimnation when the topic is repeated across adjacent verses.

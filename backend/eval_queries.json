@@ -1,0 +1,53 @@
+{
+  "patience in hardship": {
+    "expected_refs": ["16:127", "2:45", "94:5", "94:6"]
+  },
+  "what does the Quran say about orphans": {
+    "expected_refs": ["4:6", "4:8", "4:2", "89:17"]
+  },
+  "charity and giving to the poor": {
+    "expected_refs": ["2:271", "2:273", "2:215"]
+  },
+  "the story of Moses and Pharaoh": {
+    "expected_refs": ["28:3", "28:4"]
+  },
+  "how should I treat my parents": {
+    "expected_refs": ["17:23", "17:24", "29:8", "31:14"]
+  },
+  "what does the Quran say about anxiety": {
+    "expected_refs": ["2:45", "94:5", "94:6", "16:127"]
+  },
+  "what does the Quran say about depression": {
+    "expected_refs": ["94:5", "94:6", "2:153", "65:3"]
+  },
+  "what does the Quran say about gratitude": {
+    "expected_refs": ["14:7", "31:12", "16:18", "2:152"]
+  },
+  "what does the Quran say about justice": {
+    "expected_refs": ["16:90", "4:58", "6:152", "5:8"]
+  },
+  "what does the Quran say about forgiveness": {
+    "expected_refs": ["4:110", "64:14", "71:10", "39:53"]
+  },
+  "what does the Quran say about seeking knowledge": {
+    "expected_refs": ["96:1", "20:114", "39:9", "16:78"]
+  },
+  "what does the Quran say about the poor and needy": {
+    "expected_refs": ["2:273", "2:271", "2:215", "9:60"]
+  },
+  "what does the Quran say about stress and hardship": {
+    "expected_refs": ["94:5", "94:6", "2:286", "65:3"]
+  },
+  "what does the Quran say about responding to wrongdoing": {
+    "expected_refs": ["16:126", "41:34", "4:148", "5:8"]
+  },
+  "what is the proper way to baptize an infant in Islam": {
+    "expected_refs": []
+  },
+  "what is the best Islamic stock portfolio strategy": {
+    "expected_refs": []
+  },
+  "what does the Quran say about patience and trust in Allah": {
+    "expected_refs": ["2:153", "31:17", "94:5", "94:6"]
+  }
+}
