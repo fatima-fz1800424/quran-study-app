@@ -17,6 +17,25 @@ try:
 except ImportError:  # pragma: no cover
     from retrieval import retriever
 
+try:
+    from backend.guardrails import (
+        NO_SOURCE_MESSAGE,
+        RULING_REDIRECT_MESSAGE,
+        is_ruling_question,
+        relevant_chunks,
+        verified_citations,
+    )
+except ImportError:  # pragma: no cover
+    from guardrails import (
+        NO_SOURCE_MESSAGE,
+        RULING_REDIRECT_MESSAGE,
+        is_ruling_question,
+        relevant_chunks,
+        verified_citations,
+    )
+
+GEMINI_MODEL = 'gemini-3.6-flash'
+
 load_dotenv()
 
 logger = logging.getLogger('quran_backend')
@@ -91,19 +110,12 @@ def search(
     return retriever.search(q, k=k, strategy=strategy, threshold=threshold, model_name=model_name)
 
 
-@app.post('/ask')
-def ask(payload: dict[str, str]) -> dict[str, Any]:
-    question = (payload or {}).get('question', '').strip()
-    if not question:
-        raise HTTPException(status_code=400, detail='Question is required.')
+def _call_gemini(prompt: str) -> str:
+    """Send `prompt` to Gemini and return the reply text.
 
-    # Use the winning retrieval variant: dense mpnet embeddings by default
-    chunks = retriever.search(question, k=5, model_name='sentence-transformers/all-mpnet-base-v2')
-    references = [chunk['reference'] for chunk in chunks]
-    context = '\n\n'.join(
-        f"[{chunk['reference']}] {chunk['translation_text']}" for chunk in chunks
-    )
-
+    Kept as a single seam so tests can replace the model call without needing an
+    API key or network access.
+    """
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         raise HTTPException(
@@ -118,15 +130,9 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
         )
 
     client = genai.Client(api_key=api_key)
-    prompt = (
-        f'{SYSTEM_PROMPT}\n\n'
-        f'Question: {question}\n\n'
-        f'Verses:\n{context}'
-    )
-
     try:
         response = client.models.generate_content(
-            model='gemini-3.6-flash',
+            model=GEMINI_MODEL,
             contents=prompt,
         )
     except Exception as exc:  # pragma: no cover - external API behavior
@@ -135,13 +141,81 @@ def ask(payload: dict[str, str]) -> dict[str, Any]:
             detail=f'Gemini API call failed: {exc}',
         ) from exc
 
+    return response.text or ''
+
+
+@app.post('/ask')
+def ask(payload: dict[str, str]) -> dict[str, Any]:
+    question = (payload or {}).get('question', '').strip()
+    if not question:
+        raise HTTPException(status_code=400, detail='Question is required.')
+
+    # Ruling questions never reach the model. Refusing here rather than in the
+    # prompt means the refusal cannot be talked around and costs no model call.
+    if is_ruling_question(question):
+        return {
+            'status': 'refused_ruling',
+            'question': question,
+            'system_prompt': SYSTEM_PROMPT,
+            'context': '',
+            'references': [],
+            'citations': [],
+            'answer': RULING_REDIRECT_MESSAGE,
+        }
+
+    # Use the winning retrieval variant: dense mpnet embeddings by default
+    chunks = retriever.search(question, k=5, model_name='sentence-transformers/all-mpnet-base-v2')
+
+    # Retrieval always returns its k best, however weak. Without a floor, an
+    # off-topic question arrives at the model dressed as sourced context.
+    chunks = relevant_chunks(chunks)
+    if not chunks:
+        return {
+            'status': 'no_source',
+            'question': question,
+            'system_prompt': SYSTEM_PROMPT,
+            'context': '',
+            'references': [],
+            'citations': [],
+            'answer': NO_SOURCE_MESSAGE,
+        }
+
+    references = [chunk['reference'] for chunk in chunks]
+    context = '\n\n'.join(
+        f"[{chunk['reference']}] {chunk['translation_text']}" for chunk in chunks
+    )
+
+    prompt = (
+        f'{SYSTEM_PROMPT}\n\n'
+        f'Question: {question}\n\n'
+        f'Verses:\n{context}'
+    )
+
+    answer = _call_gemini(prompt)
+
+    # An answer we cannot trace back to a retrieved verse is not a sourced
+    # answer, whatever it sounds like. Citations of verses that were never
+    # retrieved are discarded, and an answer left with none is not shown.
+    citations = verified_citations(answer, references)
+    if not citations:
+        return {
+            'status': 'no_source',
+            'question': question,
+            'system_prompt': SYSTEM_PROMPT,
+            'context': context,
+            'references': references,
+            'citations': [],
+            'answer': NO_SOURCE_MESSAGE,
+        }
+
     return {
         'status': 'ok',
         'question': question,
         'system_prompt': SYSTEM_PROMPT,
         'context': context,
         'references': references,
-        'answer': response.text,
+        'citations': citations,
+        'answer': answer,
     }
 
 
