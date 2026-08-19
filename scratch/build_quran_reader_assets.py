@@ -22,7 +22,12 @@ translation_req = urllib.request.Request(
 with urllib.request.urlopen(translation_req, timeout=30) as response:
     translation_xml = response.read().decode('utf-8', 'replace')
 
-translation_xml = re.sub(r'<!--.*?-->', '', translation_xml, flags=re.DOTALL)
+comment_match = re.search(r'<!--(.*?)-->', translation_xml, flags=re.DOTALL)
+if comment_match is None:
+    raise ValueError('Missing Tanzil attribution header in translation XML.')
+attribution_notice = comment_match.group(1).strip()
+translation_xml = translation_xml.replace(comment_match.group(0), '', 1)
+
 translation_root = ET.fromstring(translation_xml)
 translation_map = {}
 for sura in translation_root.findall('sura'):
@@ -88,6 +93,7 @@ assert sum(len(surah['ayahs']) for surah in surahs) == 6236, (
 )
 
 payload = {
+    'attribution': attribution_notice,
     'translation': {
         'name': 'Yusuf Ali',
         'translator': 'Abdullah Yusuf Ali',

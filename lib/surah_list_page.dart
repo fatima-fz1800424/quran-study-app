@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SurahSummary {
   const SurahSummary({
@@ -23,16 +24,28 @@ class AyahEntry {
   const AyahEntry({
     required this.verseNumber,
     required this.text,
+    required this.translation,
   });
 
   final int verseNumber;
   final String text;
+  final String translation;
 }
 
 class QuranDataLoader {
-  static Future<List<SurahSummary>> loadSurahs() async {
+  static Future<Map<String, dynamic>> _loadData() async {
     final jsonString = await rootBundle.loadString('assets/quran_reader_data.json');
-    final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
+    return jsonDecode(jsonString) as Map<String, dynamic>;
+  }
+
+  static Future<String> loadAttribution() async {
+    final decoded = await _loadData();
+    return decoded['attribution'] as String? ??
+        'Tanzil Project • English translation by Abdullah Yusuf Ali';
+  }
+
+  static Future<List<SurahSummary>> loadSurahs() async {
+    final decoded = await _loadData();
     final surahs = decoded['surahs'] as List<dynamic>;
 
     return surahs
@@ -49,8 +62,7 @@ class QuranDataLoader {
   }
 
   static Future<List<AyahEntry>> loadAyahsForSurah(int surahNumber) async {
-    final jsonString = await rootBundle.loadString('assets/quran_reader_data.json');
-    final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
+    final decoded = await _loadData();
     final surahs = decoded['surahs'] as List<dynamic>;
     final target = surahs.firstWhere((surah) => surah['number'] == surahNumber);
     final ayahs = target['ayahs'] as List<dynamic>;
@@ -60,6 +72,7 @@ class QuranDataLoader {
           (ayah) => AyahEntry(
             verseNumber: ayah['verse_number'] as int,
             text: ayah['text'] as String,
+            translation: ayah['translation'] as String? ?? '',
           ),
         )
         .toList();
@@ -158,6 +171,7 @@ class ReaderPage extends StatefulWidget {
 
 class _ReaderPageState extends State<ReaderPage> {
   late Future<List<AyahEntry>> _ayahsFuture;
+  bool _showTranslations = true;
 
   @override
   void initState() {
@@ -165,10 +179,65 @@ class _ReaderPageState extends State<ReaderPage> {
     _ayahsFuture = QuranDataLoader.loadAyahsForSurah(widget.surah.number);
   }
 
+  void _showSettingsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile.adaptive(
+                  value: _showTranslations,
+                  title: const Text('Show English translations'),
+                  subtitle: const Text('Tanzil Project / Abdullah Yusuf Ali'),
+                  onChanged: (value) {
+                    setState(() {
+                      _showTranslations = value;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+                const Divider(),
+                const ListTile(
+                  title: Text('Translation source'),
+                  subtitle: Text('Tanzil Project • Abdullah Yusuf Ali'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: const Text('tanzil.net'),
+                  subtitle: const Text('https://tanzil.net'),
+                  onTap: () async {
+                    final uri = Uri.parse('https://tanzil.net');
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.surah.nameSimple)),
+      appBar: AppBar(
+        title: Text(widget.surah.nameSimple),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
+            onPressed: _showSettingsSheet,
+          ),
+        ],
+      ),
       body: FutureBuilder<List<AyahEntry>>(
         future: _ayahsFuture,
         builder: (context, snapshot) {
@@ -187,6 +256,8 @@ class _ReaderPageState extends State<ReaderPage> {
             itemCount: ayahs.length,
             itemBuilder: (context, index) {
               final ayah = ayahs[index];
+              final showTranslation = _showTranslations && ayah.translation.trim().isNotEmpty;
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 18),
                 child: Column(
@@ -207,6 +278,17 @@ class _ReaderPageState extends State<ReaderPage> {
                         height: 1.9,
                       ),
                     ),
+                    if (showTranslation) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        ayah.translation,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          height: 1.5,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
