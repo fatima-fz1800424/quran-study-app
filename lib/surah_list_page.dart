@@ -197,11 +197,21 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
                   final itemIndex = lastRead == null ? index : index - 1;
                   final surah = surahs[itemIndex];
                   return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    minLeadingWidth: 28,
                     title: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         SizedBox(
-                          width: 36,
-                          child: Text('${surah.number}'),
+                          width: 32,
+                          child: Text(
+                            '${surah.number}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
                         Expanded(
                           child: Column(
@@ -210,13 +220,20 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
                               Text(
                                 surah.nameArabic,
                                 textDirection: TextDirection.rtl,
-                                style: const TextStyle(
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
                                   fontFamily: 'AmiriQuran',
-                                  fontSize: 28,
+                                  fontSize: 26,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
+                              const SizedBox(height: 2),
                               Text(
                                 '${surah.nameSimple} • ${surah.revelationPlace} • ${surah.verseCount} ayahs',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ],
                           ),
@@ -378,9 +395,35 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
 
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.surah.nameSimple),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                widget.surah.nameArabic,
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'AmiriQuran',
+                  fontSize: 26,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                widget.surah.nameSimple,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -415,7 +458,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           });
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             itemCount: ayahs.length,
             itemBuilder: (context, index) {
               final ayah = ayahs[index];
@@ -424,60 +467,71 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
               final isBookmarked = _bookmarks.contains('${widget.surah.number}:${ayah.verseNumber}');
               final showTranslation = _showTranslations && ayah.translation.trim().isNotEmpty;
 
-              return Padding(
-                key: key,
-                padding: const EdgeInsets.only(bottom: 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Padding(
+                    key: key,
+                    padding: const EdgeInsets.only(bottom: 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '${ayah.verseNumber}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${ayah.verseNumber}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: isBookmarked ? 'Remove bookmark' : 'Add bookmark',
+                              icon: Icon(
+                                isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              onPressed: () async {
+                                await _toggleBookmark(ayah.verseNumber);
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        SelectableText(
+                          ayah.text,
+                          textDirection: TextDirection.rtl,
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontFamily: 'AmiriQuran',
+                            fontSize: settings.arabicFontSize,
+                            height: 1.8,
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
-                        IconButton(
-                          tooltip: isBookmarked ? 'Remove bookmark' : 'Add bookmark',
-                          icon: Icon(
-                            isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                        if (showTranslation) ...[
+                          const SizedBox(height: 12),
+                          InkWell(
+                            onTap: () async {
+                              await _saveLastRead(ayah.verseNumber);
+                            },
+                            child: Text(
+                              ayah.translation,
+                              style: TextStyle(
+                                fontSize: 17,
+                                height: 1.5,
+                                fontStyle: FontStyle.italic,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           ),
-                          onPressed: () async {
-                            await _toggleBookmark(ayah.verseNumber);
-                          },
-                        ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    SelectableText(
-                      ayah.text,
-                      textDirection: TextDirection.rtl,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontFamily: 'AmiriQuran',
-                        fontSize: settings.arabicFontSize,
-                        height: 1.9,
-                      ),
-                    ),
-                    if (showTranslation) ...[
-                      const SizedBox(height: 12),
-                      InkWell(
-                        onTap: () async {
-                          await _saveLastRead(ayah.verseNumber);
-                        },
-                        child: Text(
-                          ayah.translation,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            height: 1.5,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               );
             },
