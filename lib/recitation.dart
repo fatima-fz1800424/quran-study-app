@@ -16,6 +16,29 @@ const String kRecitationAyahEndpoint =
 /// Relative paths from the API resolve against this host.
 const String kVersesCdn = 'https://verses.quran.com';
 
+/// Hosts we are willing to stream recitation from.
+///
+/// Quran.com's API resolves three of its twelve reciters to
+/// `mirrors.quranicaudio.com/everyayah/...`, which is EveryAyah's audio.
+/// EveryAyah publishes no copyright notice, licence or terms for its audio -
+/// its only stated terms cover the separate timing files - and absence of a
+/// prohibition is not permission. Those reciters are therefore excluded, even
+/// though Quran.com serves them.
+///
+/// This filters by host rather than by reciter id on purpose. An id list would
+/// silently start streaming from a mirror again the day Quran.com re-points a
+/// reciter; a host allowlist makes that reciter disappear instead.
+const Set<String> kAllowedAudioHosts = {
+  'verses.quran.com',
+  'audio.qurancdn.com',
+};
+
+/// Whether [url] is on a host we may stream from. See [kAllowedAudioHosts].
+bool isAllowedAudioUrl(String url) {
+  final host = Uri.tryParse(url)?.host;
+  return host != null && host.isNotEmpty && kAllowedAudioHosts.contains(host);
+}
+
 /// Placeholder for the zero-padded `SSSAAA` verse token in a URL template.
 const String kRefPlaceholder = '{ref}';
 
@@ -144,7 +167,7 @@ class PlatformRecitationService implements RecitationService {
       throw StateError('Could not load reciters: HTTP ${response.statusCode}');
     }
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final loaded = ((body['recitations'] as List<dynamic>?) ?? const [])
+    final announced = ((body['recitations'] as List<dynamic>?) ?? const [])
         .map(
           (item) => Reciter(
             id: item['id'] as int,
@@ -153,8 +176,49 @@ class PlatformRecitationService implements RecitationService {
           ),
         )
         .toList();
-    _reciters = loaded;
-    return loaded;
+
+    // Resolve every template up front so the host allowlist can be applied
+    // before a reciter is ever offered. Done in parallel; it is one small
+    // request each, once per session.
+    final resolved = await Future.wait(announced.map(_fetchSource));
+    final allowed = <Reciter>[];
+    for (final source in resolved) {
+      if (source == null || !isAllowedAudioUrl(source.template)) {
+        continue;
+      }
+      _sources[source.reciter.id] = source;
+      allowed.add(source.reciter);
+    }
+
+    _reciters = allowed;
+    return allowed;
+  }
+
+  /// Fetch a reciter's URL template. Any ayah will do; its path yields the
+  /// template for all of them.
+  Future<RecitationSource?> _fetchSource(Reciter reciter) async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$kRecitationAyahEndpoint/${reciter.id}/by_ayah/1:1'),
+      );
+      if (response.statusCode != 200) {
+        return null;
+      }
+      final files = (jsonDecode(response.body)
+          as Map<String, dynamic>)['audio_files'] as List<dynamic>?;
+      if (files == null || files.isEmpty) {
+        return null;
+      }
+      final template = audioTemplateFromApiPath(
+        (files.first as Map<String, dynamic>)['url'] as String? ?? '',
+      );
+      if (template == null) {
+        return null;
+      }
+      return RecitationSource(reciter: reciter, template: template);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -163,25 +227,12 @@ class PlatformRecitationService implements RecitationService {
     if (cached != null) {
       return cached;
     }
-    // Any ayah will do; its path yields the template for all of them.
-    final response = await _client.get(
-      Uri.parse('$kRecitationAyahEndpoint/${reciter.id}/by_ayah/1:1'),
-    );
-    if (response.statusCode != 200) {
+    // Not normally reached: loadReciters resolves and caches everything it
+    // returns. Re-checked here anyway so no path can bypass the allowlist.
+    final source = await _fetchSource(reciter);
+    if (source == null || !isAllowedAudioUrl(source.template)) {
       return null;
     }
-    final files = (jsonDecode(response.body)
-        as Map<String, dynamic>)['audio_files'] as List<dynamic>?;
-    if (files == null || files.isEmpty) {
-      return null;
-    }
-    final template = audioTemplateFromApiPath(
-      (files.first as Map<String, dynamic>)['url'] as String? ?? '',
-    );
-    if (template == null) {
-      return null;
-    }
-    final source = RecitationSource(reciter: reciter, template: template);
     _sources[reciter.id] = source;
     return source;
   }

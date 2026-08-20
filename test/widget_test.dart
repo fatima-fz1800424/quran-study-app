@@ -680,6 +680,81 @@ void main() {
     });
   });
 
+  group('recitation host allowlist', () {
+    test('accepts the Quran.com CDNs and rejects the EveryAyah mirror', () {
+      expect(
+        isAllowedAudioUrl('https://verses.quran.com/Alafasy/mp3/002255.mp3'),
+        isTrue,
+      );
+      expect(
+        isAllowedAudioUrl('https://audio.qurancdn.com/Alafasy/mp3/002255.mp3'),
+        isTrue,
+      );
+      // EveryAyah publishes no terms for its audio, so it is not streamed from
+      // even when Quran.com's own API points there.
+      expect(
+        isAllowedAudioUrl(
+          'https://mirrors.quranicaudio.com/everyayah/Husary_64kbps/002255.mp3',
+        ),
+        isFalse,
+      );
+      expect(isAllowedAudioUrl('https://everyayah.com/data/x/002255.mp3'), isFalse);
+      expect(isAllowedAudioUrl('not a url'), isFalse);
+      expect(isAllowedAudioUrl(''), isFalse);
+    });
+
+    testWidgets('reciters served from a disallowed host are not offered', (
+      tester,
+    ) async {
+      // Mirrors the real API: most reciters resolve to verses.quran.com, a few
+      // to the EveryAyah mirror.
+      final client = MockClient((request) async {
+        if (request.url.path.contains('resources/recitations')) {
+          return http.Response(
+            jsonEncode({
+              'recitations': [
+                {'id': 7, 'reciter_name': 'Alafasy', 'style': null},
+                {'id': 6, 'reciter_name': 'Al-Husary', 'style': null},
+                {'id': 2, 'reciter_name': 'AbdulBaset', 'style': 'Murattal'},
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        final id = int.parse(request.url.pathSegments[
+            request.url.pathSegments.indexOf('recitations') + 1]);
+        final url = id == 6
+            ? '//mirrors.quranicaudio.com/everyayah/Husary_64kbps/001001.mp3'
+            : 'Alafasy/mp3/001001.mp3';
+        return http.Response(
+          jsonEncode({
+            'audio_files': [
+              {'verse_key': '1:1', 'url': url},
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final service = PlatformRecitationService(client: client);
+      final reciters = await service.loadReciters();
+
+      expect(reciters.map((r) => r.id), [7, 2]);
+      expect(
+        reciters.any((r) => r.id == 6),
+        isFalse,
+        reason: 'the mirror-hosted reciter must not be offered',
+      );
+      // And it cannot be reached by asking for it directly either.
+      expect(
+        await service.resolveSource(const Reciter(id: 6, name: 'Al-Husary')),
+        isNull,
+      );
+    });
+  });
+
   group('verse by verse recitation', () {
     Future<FakeRecitationService> openReader(WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({});

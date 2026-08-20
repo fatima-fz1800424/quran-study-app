@@ -125,7 +125,7 @@ per ayah. Four sources publish ayah-level files:
 
 | Source | Reciters | Ayah-level files | Stated terms |
 |--------|----------|------------------|--------------|
-| Quran.com / Quran Foundation | 12 | yes | yes, quoted below |
+| Quran.com / Quran Foundation | 12 announced, **9 used** | yes | yes, quoted below |
 | EveryAyah.com | 60+ | yes | **none found** |
 | AlQuran Cloud | 189 editions | yes | not checked for audio |
 | QuranicAudio.com | 177 qaris | whole surah | not checked |
@@ -136,7 +136,21 @@ returns a relative path such as `Alafasy/mp3/002255.mp3`, served from
 200 with `Access-Control-Allow-Origin: *` and `Accept-Ranges: bytes`. Measured
 sizes run from 143KB for 1:1 to 3.97MB for 2:282 at 128kbps.
 
-**EveryAyah is deliberately not used.** Its pages carry no copyright notice,
+**EveryAyah is deliberately not used, including through Quran.com.** Three of
+Quran.com's twelve ayah-by-ayah reciters - Al-Husary (id 6), al-Tablawi (11) and
+Al-Husary Muallim (12) - do not resolve to Quran.com's own CDN at all. Their API
+returns a protocol-relative URL to `mirrors.quranicaudio.com/everyayah/...`,
+which is EveryAyah's audio, so the browser fetches it from there and bypasses
+Quran.com entirely. Those three are excluded, leaving **9 reciters**.
+
+The exclusion is enforced by a host allowlist (`verses.quran.com`,
+`audio.qurancdn.com`) applied to each reciter's resolved template before it is
+offered, not by a list of reciter ids. An id list would silently start streaming
+from the mirror again the day Quran.com re-points a reciter; a host allowlist
+makes that reciter disappear from the picker instead. `resolveSource` re-checks
+it too, so no path can bypass it.
+
+Its pages carry no copyright notice,
 licence or terms for the audio. The only stated terms on the site cover the
 *timing files*: "(C) VerseByVerseQuran.com You must link back to our site from
 your product and web-site to use these timings", and that licence link now
