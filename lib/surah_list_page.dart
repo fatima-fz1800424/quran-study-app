@@ -35,6 +35,42 @@ class SurahSummary {
   final int verseCount;
 }
 
+/// Fold text into a form the surah search can compare.
+///
+/// Separators are dropped and runs of the same character collapsed, because
+/// Tanzil's transliterations double long vowels - "Al-Faatiha", "Al-Ikhlaas",
+/// "An-Naas" - while people type "fatiha", "ikhlas", "nas". A plain substring
+/// match fails on all three. Both the query and the candidate go through this,
+/// so the comparison stays symmetric.
+String normaliseForSearch(String value) {
+  final stripped = value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9؀-ۿ]'), '');
+  final buffer = StringBuffer();
+  for (var i = 0; i < stripped.length; i++) {
+    if (i == 0 || stripped[i] != stripped[i - 1]) {
+      buffer.write(stripped[i]);
+    }
+  }
+  return buffer.toString();
+}
+
+/// Whether [surah] should be shown for a free-text [query].
+///
+/// Matches on the number, the Arabic name, the English meaning, the
+/// transliteration and the revelation place.
+bool surahMatchesQuery(SurahSummary surah, String query) {
+  final needle = normaliseForSearch(query);
+  if (needle.isEmpty) {
+    return true;
+  }
+  final haystack = normaliseForSearch(
+    '${surah.number} ${surah.nameArabic} ${surah.nameSimple} '
+    '${surah.nameTransliterated} ${surah.revelationPlace}',
+  );
+  return haystack.contains(needle);
+}
+
 class AyahEntry {
   const AyahEntry({
     required this.verseNumber,
@@ -385,13 +421,12 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
           }
 
           final allSurahs = snapshot.data ?? const <SurahSummary>[];
-          final query = _searchController.text.trim().toLowerCase();
+          final query = _searchController.text.trim();
           final surahs = query.isEmpty
               ? allSurahs
-              : allSurahs.where((surah) {
-                  final haystack = '${surah.nameArabic} ${surah.nameSimple} ${surah.revelationPlace}'.toLowerCase();
-                  return haystack.contains(query);
-                }).toList();
+              : allSurahs
+                  .where((surah) => surahMatchesQuery(surah, query))
+                  .toList();
 
           return Builder(
             builder: (context) {

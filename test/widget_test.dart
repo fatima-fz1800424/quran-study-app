@@ -607,6 +607,103 @@ void main() {
     expect(find.byIcon(Icons.volume_up_outlined), findsNothing);
   });
 
+  group('surah search', () {
+    // Transliterations exactly as Tanzil supplies them, which is the point:
+    // they double long vowels, so a plain substring match misses the
+    // spellings people type. Arabic names are left empty rather than typed out.
+    SurahSummary surah(int number, String english, String transliterated) =>
+        SurahSummary(
+          number: number,
+          nameArabic: '',
+          nameSimple: english,
+          nameTransliterated: transliterated,
+          revelationPlace: 'makkah',
+          verseCount: 7,
+        );
+
+    final fatiha = surah(1, 'The Opening', 'Al-Faatiha');
+    final baqara = surah(2, 'The Cow', 'Al-Baqara');
+    final yaseen = surah(36, 'Yaseen', 'Yaseen');
+    final ikhlas = surah(112, 'Sincerity', 'Al-Ikhlaas');
+    final nas = surah(114, 'Mankind', 'An-Naas');
+
+    test('matches the transliterations people actually type', () {
+      expect(surahMatchesQuery(baqara, 'baqara'), isTrue);
+      // These three fail a plain substring match against the doubled vowels.
+      expect(surahMatchesQuery(fatiha, 'fatiha'), isTrue);
+      expect(surahMatchesQuery(ikhlas, 'ikhlas'), isTrue);
+      expect(surahMatchesQuery(nas, 'nas'), isTrue);
+      expect(surahMatchesQuery(yaseen, 'yaseen'), isTrue);
+    });
+
+    test('still matches the English meaning, number and revelation place', () {
+      expect(surahMatchesQuery(baqara, 'cow'), isTrue);
+      expect(surahMatchesQuery(nas, 'Mankind'), isTrue);
+      expect(surahMatchesQuery(yaseen, '36'), isTrue);
+      expect(surahMatchesQuery(fatiha, 'makkah'), isTrue);
+    });
+
+    test('does not match unrelated queries', () {
+      expect(surahMatchesQuery(baqara, 'fatiha'), isFalse);
+      expect(surahMatchesQuery(fatiha, 'baqara'), isFalse);
+      expect(surahMatchesQuery(ikhlas, 'zzzz'), isFalse);
+      expect(surahMatchesQuery(nas, 'madinah'), isFalse);
+    });
+
+    test('an empty query matches everything', () {
+      expect(surahMatchesQuery(baqara, ''), isTrue);
+      expect(surahMatchesQuery(baqara, '   '), isTrue);
+    });
+  });
+
+  testWidgets('typing a transliteration filters the surah list', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    QuranDataLoader.seedCorpusForTests({
+      'surahs': [
+        {
+          'number': 1,
+          'name_arabic': '',
+          'name_simple': 'The Opening',
+          'name_transliterated': 'Al-Faatiha',
+          'revelation_place': 'makkah',
+          'verse_count': 1,
+          'ayahs': [
+            {'verse_number': 1, 'text': 'placeholder', 'translation': 'x'},
+          ],
+        },
+        {
+          'number': 2,
+          'name_arabic': '',
+          'name_simple': 'The Cow',
+          'name_transliterated': 'Al-Baqara',
+          'revelation_place': 'madinah',
+          'verse_count': 1,
+          'ayahs': [
+            {'verse_number': 1, 'text': 'placeholder', 'translation': 'x'},
+          ],
+        },
+      ],
+    });
+
+    await tester.pumpWidget(const ProviderScope(child: QuranStudyApp()));
+    await tester.pump();
+    await tester.pump();
+
+    // The row renders "{name} • {place} • {n} ayahs", so match on a substring.
+    expect(find.textContaining('The Cow'), findsOneWidget);
+    expect(find.textContaining('The Opening'), findsOneWidget);
+
+    // Drives the real search box, so this covers the filter wiring and not
+    // just the matcher - which is exactly what was broken.
+    await tester.enterText(find.byType(TextField).first, 'baqara');
+    await tester.pump();
+
+    expect(find.textContaining('The Cow'), findsOneWidget);
+    expect(find.textContaining('The Opening'), findsNothing);
+  });
+
   test('reference parsing rejects anything outside the corpus', () {
     expect(parseReference('2:255')?.surahNumber, 2);
     expect(parseReference('2:255')?.ayahNumber, 255);
