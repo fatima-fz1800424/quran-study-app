@@ -148,14 +148,14 @@ lib/
   main.dart              app shell, theme, settings state
   surah_list_page.dart   surah list, reader, assistant   (monolithic - see below)
   voice.dart             speech seam + platform implementation
-  data/                  corpus validation
+  data/                  corpus validation rules (shared with the importer)
 backend/
   app.py                 FastAPI endpoints
   retrieval.py           embeddings, dense/hybrid/rerank search
   guardrails.py          refusal detection, relevance floor, citations
   build_corpus.py        corpus.json from the bundled asset
   run_variant_sweep.py   retrieval benchmark
-tool/import_quran.dart   one-off verified corpus import
+tool/build_quran_assets.py  builds the bundled corpus from Tanzil, verified
 docs/                    BRIEF, DECISIONS, SOURCES, eval_review
 ```
 
@@ -166,8 +166,10 @@ user data.
 
 | Data | Source | Licence / basis |
 |------|--------|-----------------|
-| Uthmani Arabic text | Quran.com API v4, edition `quran-uthmani` | Fetched once, bundled; used as the sole source of Arabic |
-| English translation | Tanzil Project, Yusuf Ali (`en.yusufali`) | Tanzil terms: verbatim copies permitted with attribution and a link to tanzil.net, both of which the app carries |
+| Uthmani Arabic text | Tanzil Project, Uthmani edition | Tanzil terms: verbatim copies permitted in any application with attribution and a link to tanzil.net, both of which the app carries |
+| Surah metadata | Tanzil Project `quran-data.js` | Creative Commons Attribution 3.0 |
+| English translation | Tanzil Project, Yusuf Ali (`en.yusufali`) | Same Tanzil terms |
+| Per-surah ayah counts | Quran.com API v4 chapters endpoint | Build-time cross-check only; nothing from it is stored, as their terms cap storage at one week |
 | Tafsir | none | **Deliberately excluded** - no source with a clear redistribution licence could be verified, so tafsir was dropped rather than shipped without a rights basis |
 
 Quranic Arabic is never generated, retyped or reconstructed anywhere in this
@@ -188,9 +190,9 @@ Measured on 15 labelled queries in `backend/eval_queries.json`, using
 | Metric | Value |
 |--------|-------|
 | **MRR** | **0.917** |
-| **precision@5** | **0.747** |
-| relevant verses in the top 5 | 56 / 75 |
-| recall@5 as the sweep script reports it | 0.479 |
+| **precision@5** | **0.693** |
+| relevant verses in the top 5 | 52 / 75 |
+| recall@5 as the sweep script reports it | 0.445 |
 
 **Do not read that recall@5 as the headline.** It divides by the number of
 labelled relevant verses, so a query with more than five of them cannot score
@@ -247,8 +249,7 @@ the old figures were measuring bad labels. Two caveats on the current ones:
 - `lib/surah_list_page.dart` is ~1800 lines holding the surah list, reader and
   assistant. It should be split; the layered `data/domain/presentation`
   structure the brief calls for exists only as a `data/` folder.
-- `drift` is a dependency but unused: the web runtime reads bundled JSON and
-  `lib/data/quran_database.dart` deliberately throws.
+- `drift` is a dependency but unused: the web runtime reads bundled JSON only.
 - Voice dictation sends **the audio of your voice** to the browser's speech
   service, off your device. The app asks before opening the microphone. Details
   in `docs/SOURCES.md`.

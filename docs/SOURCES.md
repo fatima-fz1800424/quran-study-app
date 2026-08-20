@@ -2,12 +2,59 @@
 
 ## Quran corpus
 
-- Source: Quran.com API v4
-- Independent chapter-count endpoint: https://api.quran.com/api/v4/chapters?language=en
-- Uthmani Arabic text endpoint: https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number={chapter_number}
-- Edition identifier: quran-uthmani
-- Edition name: Uthmani
-- Fetched on: 2026-08-19
+### Arabic text - Tanzil Project
+
+- Source: Tanzil Project, Uthmani edition
+- Download: `https://tanzil.net/pub/download/index.php?quranType=uthmani&outType=txt-2&marks=true&sajdah=true&rub=true&tatweel=true&agree=true`
+- Re-imported on: 2026-08-20 (previously Quran.com API v4 - see below)
+- Built by: `tool/build_quran_assets.py`
+
+Stated terms, quoted from https://tanzil.net/download/:
+
+> "Permission is granted to copy and distribute verbatim copies of the Quran
+> text provided here, but changing the text is not allowed. The text can be used
+> in any website or application, provided that its source (Tanzil Project) is
+> clearly indicated, and a link is made to tanzil.net to enable users to keep
+> track of changes."
+
+The app satisfies this: the text is bundled verbatim, Tanzil is named in the
+reader's attribution, and a link to tanzil.net is shown in the reader settings.
+
+### Surah metadata - Tanzil Project
+
+- Source: `https://tanzil.net/res/text/metadata/quran-data.js`
+- Licence, quoted from the file header: `Copyright (C) 2008-2009 Tanzil.info` /
+  `License: Creative Commons Attribution 3.0`
+- Supplies surah names (Arabic, transliterated, English), ayah counts and
+  revelation place.
+
+### Quran.com / Quran Foundation - build-time cross-check only, nothing stored
+
+- Endpoint: https://api.quran.com/api/v4/chapters?language=en
+- Used by the importer to verify per-surah ayah counts against an independent
+  source. **No content from it is written to disk.**
+
+The Arabic text previously came from the Quran.com API v4 (`quran-uthmani`
+edition, fetched 2026-08-19) and was bundled permanently. That was changed
+because it conflicts with the [Quran Foundation Developer
+Terms](https://api-docs.quran.foundation/legal/developer-terms/), quoted:
+
+> "Cache or store QF Content longer than **1 week**, except where (a) QF has
+> expressly permitted longer storage, or (b) the QF Content is available through
+> the Content Sync APIs"
+
+> "QF Content is **not resold, sublicensed, or redistributed** except as
+> integral to the end-user experience of the Application."
+
+An offline-first app bundling their text in a public repository cannot satisfy a
+one-week storage limit. Tanzil's terms permit exactly what this app does, so the
+text was re-imported from there. The two editions were compared ayah by ayah
+first: **the Arabic is character-identical**, so nothing about the displayed text
+changed. See `docs/DECISIONS.md`.
+
+`assets/quran.sqlite` was deleted in the same change. It held a second copy of
+the QF-sourced Arabic, was bundled into the web build, and no runtime code read
+it.
 
 ## English translation
 

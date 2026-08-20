@@ -1,12 +1,9 @@
 {
-  "source": {
-    "name": "Quran.com API v4",
-    "chapter_count_endpoint": "https://api.quran.com/api/v4/chapters?language=en",
-    "uthmani_text_endpoint": "https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number={chapter_number}",
-    "edition_identifier": "quran-uthmani",
-    "edition_name": "Uthmani",
-    "fetched_on": "2026-08-19"
-  },
+  "arabic_source": "Tanzil Project, Uthmani",
+  "arabic_download_url": "https://tanzil.net/pub/download/index.php?quranType=uthmani&outType=txt-2&marks=true&sajdah=true&rub=true&tatweel=true&agree=true",
+  "metadata_source": "https://tanzil.net/res/text/metadata/quran-data.js",
+  "translation_source": "https://tanzil.net/trans/en.yusufali?type=xml",
+  "count_cross_check_url": "https://api.quran.com/api/v4/chapters?language=en",
   "surah_count": 114,
   "ayah_count": 6236,
   "chapter_counts": {
@@ -125,7 +122,7 @@
     "113": 5,
     "114": 6
   },
-  "total_character_count": 710229,
-  "db_path": "assets/quran.sqlite",
-  "notes": "This manifest detects drift between runs; it does not validate the initial import. The initial import is validated by comparing the independent chapters endpoint to the imported ayah rows."
+  "arabic_character_count": 710229,
+  "basmala_count": 112,
+  "notes": "Detects drift between runs. Per-surah counts are verified at build time against both the Tanzil metadata and the Quran Foundation chapters endpoint. Nothing from the latter is stored."
 }

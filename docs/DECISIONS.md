@@ -113,6 +113,108 @@ Next steps recommended:
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
 
+## Arabic text moved from Quran.com to Tanzil (2026-08-20)
+
+### Why
+
+The Arabic text was bundled from the Quran.com API v4 and stored permanently in
+a now-public repository. The [Quran Foundation Developer
+Terms](https://api-docs.quran.foundation/legal/developer-terms/) say:
+
+> "Cache or store QF Content longer than **1 week**, except where (a) QF has
+> expressly permitted longer storage, or (b) the QF Content is available through
+> the Content Sync APIs"
+
+> "QF Content is **not resold, sublicensed, or redistributed** except as
+> integral to the end-user experience of the Application."
+
+There is no reading of that under which an offline-first app can bundle their
+text indefinitely. Tanzil, already the source of the translation, permits
+precisely this use:
+
+> "Permission is granted to copy and distribute verbatim copies of the Quran
+> text provided here, but changing the text is not allowed. The text can be used
+> in any website or application, provided that its source (Tanzil Project) is
+> clearly indicated, and a link is made to tanzil.net to enable users to keep
+> track of changes."
+
+Surah metadata also moved to Tanzil (`quran-data.js`, CC Attribution 3.0), since
+names and counts from the QF endpoint were stored too. The QF chapters endpoint
+is still called at build time to cross-check per-surah counts; nothing from it is
+written to disk.
+
+### The editions were compared before anything was replaced
+
+All 6236 ayahs, both editions:
+
+| Check | Result |
+|-------|--------|
+| Surahs / ayahs / per-surah counts | 114 / 6236 / 0 mismatches |
+| Byte-identical ayahs, raw | 1935 / 6236 |
+| Differing after removing annotation marks only | 2800 |
+| Differing after also collapsing whitespace | 112 |
+| **Differing after separating the basmala** | **0** |
+
+So there is **no textual variance between the editions at all**. Every
+difference was one of three presentational things: annotation marks (Tanzil's
+default export omits pause marks, sajdah and rub-el-hizb signs, and tatweel -
+enabling those options in the download URL reproduces them exactly), whitespace,
+and the basmala.
+
+The basmala accounts for the last 112. Tanzil's line-per-ayah format prepends it
+to verse 1 of every surah that opens with one - all but surah 1, where the
+basmala *is* verse 1, and surah 9, which has none. The importer separates it into
+a per-surah `bismillah` field, preserving Tanzil's bytes exactly, so the corpus
+still holds every character of their text. It is stored rather than displayed,
+which matches the previous behaviour; rendering it as a surah header is available
+whenever wanted.
+
+One real orthographic detail surfaced while doing this: the basmala before
+surahs 95 and 97 carries a **shadda on the initial ba** that the other 110 do
+not, because surahs 94 and 96 both end in ba and continuous recitation
+assimilates. Tanzil encodes both spellings; the importer keeps whichever it was
+given rather than substituting a canonical form.
+
+### Consequence: retrieval moved slightly
+
+Surah English names differ between the sources for 41 surahs - "The Opener" vs
+"The Opening", "Jonah" vs "Jonas", "The Rocky Tract" vs "The Rock" - and
+`build_corpus.py` puts that name into `embedding_text`. So 1871 of 6236 chunks
+(30%) changed, the embedding cache was invalidated, and the corpus was
+re-embedded. Measured against the same labels:
+
+| Metric | Before | After |
+|--------|--------|-------|
+| MRR | 0.917 | **0.917** |
+| precision@5 | 0.747 | 0.693 |
+| recall@5 (ceiling-aware) | 0.757 | 0.703 |
+| recall@5 (as the sweep reports it) | 0.479 | 0.445 |
+| relevant verses in the top 5 | 56 / 75 | 52 / 75 |
+| queries with nothing relevant in the top 5 | 0 | 0 |
+
+Four hits out of 75 lost, MRR unchanged: the first result is still relevant for
+the same queries. That is the price of the licensing fix and it was accepted
+rather than worked around. Two notes for anyone comparing these numbers:
+
+- The labels were pooled from the *previous* retrieval's top 10, so verses newly
+  surfaced by the changed embeddings are unlabelled and score as misses. The
+  0.693 is therefore a floor, not a like-for-like reading.
+- `name_simple` now holds Tanzil's English name and a `name_transliterated`
+  field was added alongside it. Switching the embedded name to the
+  transliteration, or embedding both, is untested and might recover the
+  difference.
+
+### Also removed
+
+`assets/quran.sqlite`, `tool/import_quran.dart` and the `scratch/` build scripts
+were deleted. The sqlite held a second copy of the QF-sourced Arabic and was
+bundled into the web build although no runtime code read it; the Dart importer
+would have re-created the licensing problem if run. Note that DECISIONS.md
+previously described the importer as "a standalone Dart script under `tool/`" -
+that built the sqlite, while the asset the app actually reads was built by an
+undocumented script in `scratch/`. The single importer is now
+`tool/build_quran_assets.py`.
+
 ## Relabelling the evaluation set (2026-08-20)
 
 The original `expected_refs` were written from memory by a non-specialist and

@@ -23,7 +23,8 @@ import 'package:quran_study_app/voice.dart';
 const SurahSummary _testSurah = SurahSummary(
   number: 2,
   nameArabic: '',
-  nameSimple: 'Al-Baqarah',
+  nameSimple: 'The Cow',
+  nameTransliterated: 'Al-Baqara',
   revelationPlace: 'madinah',
   verseCount: 286,
 );
@@ -41,6 +42,7 @@ Map<String, dynamic> _fakeCorpus({int verses = 60}) => {
             'number': surah['number'],
             'name_arabic': '',
             'name_simple': surah['name'],
+            'name_transliterated': surah['name'],
             'revelation_place': surah['place'],
             'verse_count': verses,
             'ayahs': [

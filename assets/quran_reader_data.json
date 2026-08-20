@@ -1,5 +1,24 @@
 {
   "attribution": "# --------------------------------------------------------------------\n#\n#  Quran Translation\n#  Name: Yusuf Ali\n#  Translator: Abdullah Yusuf Ali\n#  Language: English\n#  ID: en.yusufali\n#  Last Update: May 10, 2013\n#  Source: Tanzil.net\n#\n# --------------------------------------------------------------------",
+  "sources": {
+    "arabic": {
+      "name": "Tanzil Project",
+      "edition": "Uthmani",
+      "url": "https://tanzil.net",
+      "download": "https://tanzil.net/pub/download/index.php?quranType=uthmani&outType=txt-2&marks=true&sajdah=true&rub=true&tatweel=true&agree=true",
+      "terms": "Permission is granted to copy and distribute verbatim copies of the Quran text provided here, but changing the text is not allowed. The text can be used in any website or application, provided that its source (Tanzil Project) is clearly indicated, and a link is made to tanzil.net to enable users to keep track of changes."
+    },
+    "metadata": {
+      "name": "Tanzil Project Quran metadata",
+      "url": "https://tanzil.net/res/text/metadata/quran-data.js",
+      "licence": "Creative Commons Attribution 3.0"
+    },
+    "cross_check_only_not_stored": {
+      "name": "Quran Foundation chapters endpoint",
+      "url": "https://api.quran.com/api/v4/chapters?language=en",
+      "note": "Used at build time to verify per-surah ayah counts against an independent source. No content from it is stored."
+    }
+  },
   "translation": {
     "name": "Yusuf Ali",
     "translator": "Abdullah Yusuf Ali",
@@ -12,9 +31,11 @@
     {
       "number": 1,
       "name_arabic": "الفاتحة",
-      "name_simple": "The Opener",
+      "name_simple": "The Opening",
+      "name_transliterated": "Al-Faatiha",
       "revelation_place": "makkah",
       "verse_count": 7,
+      "bismillah": null,
       "ayahs": [
         {
           "verse_number": 1,
@@ -57,8 +78,10 @@
       "number": 2,
       "name_arabic": "البقرة",
       "name_simple": "The Cow",
+      "name_transliterated": "Al-Baqara",
       "revelation_place": "madinah",
       "verse_count": 286,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -1495,9 +1518,11 @@
     {
       "number": 3,
       "name_arabic": "آل عمران",
-      "name_simple": "Family of Imran",
+      "name_simple": "The Family of Imraan",
+      "name_transliterated": "Aal-i-Imraan",
       "revelation_place": "madinah",
       "verse_count": 200,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -2505,8 +2530,10 @@
       "number": 4,
       "name_arabic": "النساء",
       "name_simple": "The Women",
+      "name_transliterated": "An-Nisaa",
       "revelation_place": "madinah",
       "verse_count": 176,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -3393,9 +3420,11 @@
     {
       "number": 5,
       "name_arabic": "المائدة",
-      "name_simple": "The Table Spread",
+      "name_simple": "The Table",
+      "name_transliterated": "Al-Maaida",
       "revelation_place": "madinah",
       "verse_count": 120,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -4003,8 +4032,10 @@
       "number": 6,
       "name_arabic": "الأنعام",
       "name_simple": "The Cattle",
+      "name_transliterated": "Al-An'aam",
       "revelation_place": "makkah",
       "verse_count": 165,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -4837,8 +4868,10 @@
       "number": 7,
       "name_arabic": "الأعراف",
       "name_simple": "The Heights",
+      "name_transliterated": "Al-A'raaf",
       "revelation_place": "makkah",
       "verse_count": 206,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -5876,8 +5909,10 @@
       "number": 8,
       "name_arabic": "الأنفال",
       "name_simple": "The Spoils of War",
+      "name_transliterated": "Al-Anfaal",
       "revelation_place": "madinah",
       "verse_count": 75,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -6260,8 +6295,10 @@
       "number": 9,
       "name_arabic": "التوبة",
       "name_simple": "The Repentance",
+      "name_transliterated": "At-Tawba",
       "revelation_place": "madinah",
       "verse_count": 129,
+      "bismillah": null,
       "ayahs": [
         {
           "verse_number": 1,
@@ -6913,9 +6950,11 @@
     {
       "number": 10,
       "name_arabic": "يونس",
-      "name_simple": "Jonah",
+      "name_simple": "Jonas",
+      "name_transliterated": "Yunus",
       "revelation_place": "makkah",
       "verse_count": 109,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -7468,8 +7507,10 @@
       "number": 11,
       "name_arabic": "هود",
       "name_simple": "Hud",
+      "name_transliterated": "Hud",
       "revelation_place": "makkah",
       "verse_count": 123,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -8092,8 +8133,10 @@
       "number": 12,
       "name_arabic": "يوسف",
       "name_simple": "Joseph",
+      "name_transliterated": "Yusuf",
       "revelation_place": "makkah",
       "verse_count": 111,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -8656,8 +8699,10 @@
       "number": 13,
       "name_arabic": "الرعد",
       "name_simple": "The Thunder",
+      "name_transliterated": "Ar-Ra'd",
       "revelation_place": "madinah",
       "verse_count": 43,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -8880,8 +8925,10 @@
       "number": 14,
       "name_arabic": "ابراهيم",
       "name_simple": "Abraham",
+      "name_transliterated": "Ibrahim",
       "revelation_place": "makkah",
       "verse_count": 52,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -9148,9 +9195,11 @@
     {
       "number": 15,
       "name_arabic": "الحجر",
-      "name_simple": "The Rocky Tract",
+      "name_simple": "The Rock",
+      "name_transliterated": "Al-Hijr",
       "revelation_place": "makkah",
       "verse_count": 99,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -9653,8 +9702,10 @@
       "number": 16,
       "name_arabic": "النحل",
       "name_simple": "The Bee",
+      "name_transliterated": "An-Nahl",
       "revelation_place": "makkah",
       "verse_count": 128,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -10302,8 +10353,10 @@
       "number": 17,
       "name_arabic": "الإسراء",
       "name_simple": "The Night Journey",
+      "name_transliterated": "Al-Israa",
       "revelation_place": "makkah",
       "verse_count": 111,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -10866,8 +10919,10 @@
       "number": 18,
       "name_arabic": "الكهف",
       "name_simple": "The Cave",
+      "name_transliterated": "Al-Kahf",
       "revelation_place": "makkah",
       "verse_count": 110,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -11425,8 +11480,10 @@
       "number": 19,
       "name_arabic": "مريم",
       "name_simple": "Mary",
+      "name_transliterated": "Maryam",
       "revelation_place": "makkah",
       "verse_count": 98,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -11923,9 +11980,11 @@
     {
       "number": 20,
       "name_arabic": "طه",
-      "name_simple": "Ta-Ha",
+      "name_simple": "Taa-Haa",
+      "name_transliterated": "Taa-Haa",
       "revelation_place": "makkah",
       "verse_count": 135,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -12608,8 +12667,10 @@
       "number": 21,
       "name_arabic": "الأنبياء",
       "name_simple": "The Prophets",
+      "name_transliterated": "Al-Anbiyaa",
       "revelation_place": "makkah",
       "verse_count": 112,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -13177,8 +13238,10 @@
       "number": 22,
       "name_arabic": "الحج",
       "name_simple": "The Pilgrimage",
+      "name_transliterated": "Al-Hajj",
       "revelation_place": "madinah",
       "verse_count": 78,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -13576,8 +13639,10 @@
       "number": 23,
       "name_arabic": "المؤمنون",
       "name_simple": "The Believers",
+      "name_transliterated": "Al-Muminoon",
       "revelation_place": "makkah",
       "verse_count": 118,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -14175,8 +14240,10 @@
       "number": 24,
       "name_arabic": "النور",
       "name_simple": "The Light",
+      "name_transliterated": "An-Noor",
       "revelation_place": "madinah",
       "verse_count": 64,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -14504,8 +14571,10 @@
       "number": 25,
       "name_arabic": "الفرقان",
       "name_simple": "The Criterion",
+      "name_transliterated": "Al-Furqaan",
       "revelation_place": "makkah",
       "verse_count": 77,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -14898,8 +14967,10 @@
       "number": 26,
       "name_arabic": "الشعراء",
       "name_simple": "The Poets",
+      "name_transliterated": "Ash-Shu'araa",
       "revelation_place": "makkah",
       "verse_count": 227,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -16042,8 +16113,10 @@
       "number": 27,
       "name_arabic": "النمل",
       "name_simple": "The Ant",
+      "name_transliterated": "An-Naml",
       "revelation_place": "makkah",
       "verse_count": 93,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -16516,8 +16589,10 @@
       "number": 28,
       "name_arabic": "القصص",
       "name_simple": "The Stories",
+      "name_transliterated": "Al-Qasas",
       "revelation_place": "makkah",
       "verse_count": 88,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -16965,8 +17040,10 @@
       "number": 29,
       "name_arabic": "العنكبوت",
       "name_simple": "The Spider",
+      "name_transliterated": "Al-Ankaboot",
       "revelation_place": "makkah",
       "verse_count": 69,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -17319,8 +17396,10 @@
       "number": 30,
       "name_arabic": "الروم",
       "name_simple": "The Romans",
+      "name_transliterated": "Ar-Room",
       "revelation_place": "makkah",
       "verse_count": 60,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -17628,8 +17707,10 @@
       "number": 31,
       "name_arabic": "لقمان",
       "name_simple": "Luqman",
+      "name_transliterated": "Luqman",
       "revelation_place": "makkah",
       "verse_count": 34,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -17807,8 +17888,10 @@
       "number": 32,
       "name_arabic": "السجدة",
       "name_simple": "The Prostration",
+      "name_transliterated": "As-Sajda",
       "revelation_place": "makkah",
       "verse_count": 30,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -17965,9 +18048,11 @@
     {
       "number": 33,
       "name_arabic": "الأحزاب",
-      "name_simple": "The Combined Forces",
+      "name_simple": "The Clans",
+      "name_transliterated": "Al-Ahzaab",
       "revelation_place": "madinah",
       "verse_count": 73,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -18340,8 +18425,10 @@
       "number": 34,
       "name_arabic": "سبإ",
       "name_simple": "Sheba",
+      "name_transliterated": "Saba",
       "revelation_place": "makkah",
       "verse_count": 54,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -18618,9 +18705,11 @@
     {
       "number": 35,
       "name_arabic": "فاطر",
-      "name_simple": "Originator",
+      "name_simple": "The Originator",
+      "name_transliterated": "Faatir",
       "revelation_place": "makkah",
       "verse_count": 45,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -18852,9 +18941,11 @@
     {
       "number": 36,
       "name_arabic": "يس",
-      "name_simple": "Ya Sin",
+      "name_simple": "Yaseen",
+      "name_transliterated": "Yaseen",
       "revelation_place": "makkah",
       "verse_count": 83,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -19276,9 +19367,11 @@
     {
       "number": 37,
       "name_arabic": "الصافات",
-      "name_simple": "Those who set the Ranks",
+      "name_simple": "Those drawn up in Ranks",
+      "name_transliterated": "As-Saaffaat",
       "revelation_place": "makkah",
       "verse_count": 182,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -20195,9 +20288,11 @@
     {
       "number": 38,
       "name_arabic": "ص",
-      "name_simple": "The Letter \"Saad\"",
+      "name_simple": "The letter Saad",
+      "name_transliterated": "Saad",
       "revelation_place": "makkah",
       "verse_count": 88,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -20644,9 +20739,11 @@
     {
       "number": 39,
       "name_arabic": "الزمر",
-      "name_simple": "The Troops",
+      "name_simple": "The Groups",
+      "name_transliterated": "Az-Zumar",
       "revelation_place": "makkah",
       "verse_count": 75,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -21029,8 +21126,10 @@
       "number": 40,
       "name_arabic": "غافر",
       "name_simple": "The Forgiver",
+      "name_transliterated": "Al-Ghaafir",
       "revelation_place": "makkah",
       "verse_count": 85,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -21462,9 +21561,11 @@
     {
       "number": 41,
       "name_arabic": "فصلت",
-      "name_simple": "Explained in Detail",
+      "name_simple": "Explained in detail",
+      "name_transliterated": "Fussilat",
       "revelation_place": "makkah",
       "verse_count": 54,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -21741,9 +21842,11 @@
     {
       "number": 42,
       "name_arabic": "الشورى",
-      "name_simple": "The Consultation",
+      "name_simple": "Consultation",
+      "name_transliterated": "Ash-Shura",
       "revelation_place": "makkah",
       "verse_count": 53,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -22015,9 +22118,11 @@
     {
       "number": 43,
       "name_arabic": "الزخرف",
-      "name_simple": "The Ornaments of Gold",
+      "name_simple": "Ornaments of gold",
+      "name_transliterated": "Az-Zukhruf",
       "revelation_place": "makkah",
       "verse_count": 89,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -22470,8 +22575,10 @@
       "number": 44,
       "name_arabic": "الدخان",
       "name_simple": "The Smoke",
+      "name_transliterated": "Ad-Dukhaan",
       "revelation_place": "makkah",
       "verse_count": 59,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -22773,9 +22880,11 @@
     {
       "number": 45,
       "name_arabic": "الجاثية",
-      "name_simple": "The Crouching",
+      "name_simple": "Crouching",
+      "name_transliterated": "Al-Jaathiya",
       "revelation_place": "makkah",
       "verse_count": 37,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -22967,9 +23076,11 @@
     {
       "number": 46,
       "name_arabic": "الأحقاف",
-      "name_simple": "The Wind-Curved Sandhills",
+      "name_simple": "The Dunes",
+      "name_transliterated": "Al-Ahqaf",
       "revelation_place": "makkah",
       "verse_count": 35,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -23152,8 +23263,10 @@
       "number": 47,
       "name_arabic": "محمد",
       "name_simple": "Muhammad",
+      "name_transliterated": "Muhammad",
       "revelation_place": "madinah",
       "verse_count": 38,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -23351,8 +23464,10 @@
       "number": 48,
       "name_arabic": "الفتح",
       "name_simple": "The Victory",
+      "name_transliterated": "Al-Fath",
       "revelation_place": "madinah",
       "verse_count": 29,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -23504,9 +23619,11 @@
     {
       "number": 49,
       "name_arabic": "الحجرات",
-      "name_simple": "The Rooms",
+      "name_simple": "The Inner Apartments",
+      "name_transliterated": "Al-Hujuraat",
       "revelation_place": "madinah",
       "verse_count": 18,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -23603,9 +23720,11 @@
     {
       "number": 50,
       "name_arabic": "ق",
-      "name_simple": "The Letter \"Qaf\"",
+      "name_simple": "The letter Qaaf",
+      "name_transliterated": "Qaaf",
       "revelation_place": "makkah",
       "verse_count": 45,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -23838,8 +23957,10 @@
       "number": 51,
       "name_arabic": "الذاريات",
       "name_simple": "The Winnowing Winds",
+      "name_transliterated": "Adh-Dhaariyat",
       "revelation_place": "makkah",
       "verse_count": 60,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -24147,8 +24268,10 @@
       "number": 52,
       "name_arabic": "الطور",
       "name_simple": "The Mount",
+      "name_transliterated": "At-Tur",
       "revelation_place": "makkah",
       "verse_count": 49,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -24401,8 +24524,10 @@
       "number": 53,
       "name_arabic": "النجم",
       "name_simple": "The Star",
+      "name_transliterated": "An-Najm",
       "revelation_place": "makkah",
       "verse_count": 62,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -24720,8 +24845,10 @@
       "number": 54,
       "name_arabic": "القمر",
       "name_simple": "The Moon",
+      "name_transliterated": "Al-Qamar",
       "revelation_place": "makkah",
       "verse_count": 55,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -25004,8 +25131,10 @@
       "number": 55,
       "name_arabic": "الرحمن",
       "name_simple": "The Beneficent",
+      "name_transliterated": "Ar-Rahmaan",
       "revelation_place": "madinah",
       "verse_count": 78,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -25403,8 +25532,10 @@
       "number": 56,
       "name_arabic": "الواقعة",
       "name_simple": "The Inevitable",
+      "name_transliterated": "Al-Waaqia",
       "revelation_place": "makkah",
       "verse_count": 96,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -25892,8 +26023,10 @@
       "number": 57,
       "name_arabic": "الحديد",
       "name_simple": "The Iron",
+      "name_transliterated": "Al-Hadid",
       "revelation_place": "madinah",
       "verse_count": 29,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26046,8 +26179,10 @@
       "number": 58,
       "name_arabic": "المجادلة",
       "name_simple": "The Pleading Woman",
+      "name_transliterated": "Al-Mujaadila",
       "revelation_place": "madinah",
       "verse_count": 22,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26165,8 +26300,10 @@
       "number": 59,
       "name_arabic": "الحشر",
       "name_simple": "The Exile",
+      "name_transliterated": "Al-Hashr",
       "revelation_place": "madinah",
       "verse_count": 24,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26294,8 +26431,10 @@
       "number": 60,
       "name_arabic": "الممتحنة",
       "name_simple": "She that is to be examined",
+      "name_transliterated": "Al-Mumtahana",
       "revelation_place": "madinah",
       "verse_count": 13,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26368,8 +26507,10 @@
       "number": 61,
       "name_arabic": "الصف",
       "name_simple": "The Ranks",
+      "name_transliterated": "As-Saff",
       "revelation_place": "madinah",
       "verse_count": 14,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26446,9 +26587,11 @@
     {
       "number": 62,
       "name_arabic": "الجمعة",
-      "name_simple": "The Congregation, Friday",
+      "name_simple": "Friday",
+      "name_transliterated": "Al-Jumu'a",
       "revelation_place": "madinah",
       "verse_count": 11,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26511,8 +26654,10 @@
       "number": 63,
       "name_arabic": "المنافقون",
       "name_simple": "The Hypocrites",
+      "name_transliterated": "Al-Munaafiqoon",
       "revelation_place": "madinah",
       "verse_count": 11,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26574,9 +26719,11 @@
     {
       "number": 64,
       "name_arabic": "التغابن",
-      "name_simple": "The Mutual Disillusion",
+      "name_simple": "Mutual Disillusion",
+      "name_transliterated": "At-Taghaabun",
       "revelation_place": "madinah",
       "verse_count": 18,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26673,9 +26820,11 @@
     {
       "number": 65,
       "name_arabic": "الطلاق",
-      "name_simple": "The Divorce",
+      "name_simple": "Divorce",
+      "name_transliterated": "At-Talaaq",
       "revelation_place": "madinah",
       "verse_count": 12,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26743,8 +26892,10 @@
       "number": 66,
       "name_arabic": "التحريم",
       "name_simple": "The Prohibition",
+      "name_transliterated": "At-Tahrim",
       "revelation_place": "madinah",
       "verse_count": 12,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26812,8 +26963,10 @@
       "number": 67,
       "name_arabic": "الملك",
       "name_simple": "The Sovereignty",
+      "name_transliterated": "Al-Mulk",
       "revelation_place": "makkah",
       "verse_count": 30,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -26971,8 +27124,10 @@
       "number": 68,
       "name_arabic": "القلم",
       "name_simple": "The Pen",
+      "name_transliterated": "Al-Qalam",
       "revelation_place": "makkah",
       "verse_count": 52,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -27240,8 +27395,10 @@
       "number": 69,
       "name_arabic": "الحاقة",
       "name_simple": "The Reality",
+      "name_transliterated": "Al-Haaqqa",
       "revelation_place": "makkah",
       "verse_count": 52,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -27509,8 +27666,10 @@
       "number": 70,
       "name_arabic": "المعارج",
       "name_simple": "The Ascending Stairways",
+      "name_transliterated": "Al-Ma'aarij",
       "revelation_place": "makkah",
       "verse_count": 44,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -27738,8 +27897,10 @@
       "number": 71,
       "name_arabic": "نوح",
       "name_simple": "Noah",
+      "name_transliterated": "Nooh",
       "revelation_place": "makkah",
       "verse_count": 28,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -27887,8 +28048,10 @@
       "number": 72,
       "name_arabic": "الجن",
       "name_simple": "The Jinn",
+      "name_transliterated": "Al-Jinn",
       "revelation_place": "makkah",
       "verse_count": 28,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -28036,8 +28199,10 @@
       "number": 73,
       "name_arabic": "المزمل",
       "name_simple": "The Enshrouded One",
+      "name_transliterated": "Al-Muzzammil",
       "revelation_place": "makkah",
       "verse_count": 20,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -28145,8 +28310,10 @@
       "number": 74,
       "name_arabic": "المدثر",
       "name_simple": "The Cloaked One",
+      "name_transliterated": "Al-Muddaththir",
       "revelation_place": "makkah",
       "verse_count": 56,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -28434,8 +28601,10 @@
       "number": 75,
       "name_arabic": "القيامة",
       "name_simple": "The Resurrection",
+      "name_transliterated": "Al-Qiyaama",
       "revelation_place": "makkah",
       "verse_count": 40,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -28642,9 +28811,11 @@
     {
       "number": 76,
       "name_arabic": "الانسان",
-      "name_simple": "The Man",
+      "name_simple": "Man",
+      "name_transliterated": "Al-Insaan",
       "revelation_place": "madinah",
       "verse_count": 31,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -28807,8 +28978,10 @@
       "number": 77,
       "name_arabic": "المرسلات",
       "name_simple": "The Emissaries",
+      "name_transliterated": "Al-Mursalaat",
       "revelation_place": "makkah",
       "verse_count": 50,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -29065,9 +29238,11 @@
     {
       "number": 78,
       "name_arabic": "النبإ",
-      "name_simple": "The Tidings",
+      "name_simple": "The Announcement",
+      "name_transliterated": "An-Naba",
       "revelation_place": "makkah",
       "verse_count": 40,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -29275,8 +29450,10 @@
       "number": 79,
       "name_arabic": "النازعات",
       "name_simple": "Those who drag forth",
+      "name_transliterated": "An-Naazi'aat",
       "revelation_place": "makkah",
       "verse_count": 46,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -29513,9 +29690,11 @@
     {
       "number": 80,
       "name_arabic": "عبس",
-      "name_simple": "He Frowned",
+      "name_simple": "He frowned",
+      "name_transliterated": "Abasa",
       "revelation_place": "makkah",
       "verse_count": 42,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -29733,8 +29912,10 @@
       "number": 81,
       "name_arabic": "التكوير",
       "name_simple": "The Overthrowing",
+      "name_transliterated": "At-Takwir",
       "revelation_place": "makkah",
       "verse_count": 29,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -29887,8 +30068,10 @@
       "number": 82,
       "name_arabic": "الإنفطار",
       "name_simple": "The Cleaving",
+      "name_transliterated": "Al-Infitaar",
       "revelation_place": "makkah",
       "verse_count": 19,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -29990,9 +30173,11 @@
     {
       "number": 83,
       "name_arabic": "المطففين",
-      "name_simple": "The Defrauding",
+      "name_simple": "Defrauding",
+      "name_transliterated": "Al-Mutaffifin",
       "revelation_place": "makkah",
       "verse_count": 36,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30179,9 +30364,11 @@
     {
       "number": 84,
       "name_arabic": "الإنشقاق",
-      "name_simple": "The Sundering",
+      "name_simple": "The Splitting Open",
+      "name_transliterated": "Al-Inshiqaaq",
       "revelation_place": "makkah",
       "verse_count": 25,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30313,9 +30500,11 @@
     {
       "number": 85,
       "name_arabic": "البروج",
-      "name_simple": "The Mansions of the Stars",
+      "name_simple": "The Constellations",
+      "name_transliterated": "Al-Burooj",
       "revelation_place": "makkah",
       "verse_count": 22,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30432,9 +30621,11 @@
     {
       "number": 86,
       "name_arabic": "الطارق",
-      "name_simple": "The Nightcommer",
+      "name_simple": "The Morning Star",
+      "name_transliterated": "At-Taariq",
       "revelation_place": "makkah",
       "verse_count": 17,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30527,8 +30718,10 @@
       "number": 87,
       "name_arabic": "الأعلى",
       "name_simple": "The Most High",
+      "name_transliterated": "Al-A'laa",
       "revelation_place": "makkah",
       "verse_count": 19,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30631,8 +30824,10 @@
       "number": 88,
       "name_arabic": "الغاشية",
       "name_simple": "The Overwhelming",
+      "name_transliterated": "Al-Ghaashiya",
       "revelation_place": "makkah",
       "verse_count": 26,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30770,8 +30965,10 @@
       "number": 89,
       "name_arabic": "الفجر",
       "name_simple": "The Dawn",
+      "name_transliterated": "Al-Fajr",
       "revelation_place": "makkah",
       "verse_count": 30,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -30929,8 +31126,10 @@
       "number": 90,
       "name_arabic": "البلد",
       "name_simple": "The City",
+      "name_transliterated": "Al-Balad",
       "revelation_place": "makkah",
       "verse_count": 20,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31038,8 +31237,10 @@
       "number": 91,
       "name_arabic": "الشمس",
       "name_simple": "The Sun",
+      "name_transliterated": "Ash-Shams",
       "revelation_place": "makkah",
       "verse_count": 15,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31122,8 +31323,10 @@
       "number": 92,
       "name_arabic": "الليل",
       "name_simple": "The Night",
+      "name_transliterated": "Al-Lail",
       "revelation_place": "makkah",
       "verse_count": 21,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31236,8 +31439,10 @@
       "number": 93,
       "name_arabic": "الضحى",
       "name_simple": "The Morning Hours",
+      "name_transliterated": "Ad-Dhuhaa",
       "revelation_place": "makkah",
       "verse_count": 11,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31299,9 +31504,11 @@
     {
       "number": 94,
       "name_arabic": "الشرح",
-      "name_simple": "The Relief",
+      "name_simple": "The Consolation",
+      "name_transliterated": "Ash-Sharh",
       "revelation_place": "makkah",
       "verse_count": 8,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31349,8 +31556,10 @@
       "number": 95,
       "name_arabic": "التين",
       "name_simple": "The Fig",
+      "name_transliterated": "At-Tin",
       "revelation_place": "makkah",
       "verse_count": 8,
+      "bismillah": "بِّسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31398,8 +31607,10 @@
       "number": 96,
       "name_arabic": "العلق",
       "name_simple": "The Clot",
+      "name_transliterated": "Al-Alaq",
       "revelation_place": "makkah",
       "verse_count": 19,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31501,9 +31712,11 @@
     {
       "number": 97,
       "name_arabic": "القدر",
-      "name_simple": "The Power",
+      "name_simple": "The Power, Fate",
+      "name_transliterated": "Al-Qadr",
       "revelation_place": "makkah",
       "verse_count": 5,
+      "bismillah": "بِّسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31535,9 +31748,11 @@
     {
       "number": 98,
       "name_arabic": "البينة",
-      "name_simple": "The Clear Proof",
+      "name_simple": "The Evidence",
+      "name_transliterated": "Al-Bayyina",
       "revelation_place": "madinah",
       "verse_count": 8,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31585,8 +31800,10 @@
       "number": 99,
       "name_arabic": "الزلزلة",
       "name_simple": "The Earthquake",
+      "name_transliterated": "Az-Zalzala",
       "revelation_place": "madinah",
       "verse_count": 8,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31633,9 +31850,11 @@
     {
       "number": 100,
       "name_arabic": "العاديات",
-      "name_simple": "The Courser",
+      "name_simple": "The Chargers",
+      "name_transliterated": "Al-Aadiyaat",
       "revelation_place": "makkah",
       "verse_count": 11,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31698,8 +31917,10 @@
       "number": 101,
       "name_arabic": "القارعة",
       "name_simple": "The Calamity",
+      "name_transliterated": "Al-Qaari'a",
       "revelation_place": "makkah",
       "verse_count": 11,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31761,9 +31982,11 @@
     {
       "number": 102,
       "name_arabic": "التكاثر",
-      "name_simple": "The Rivalry in world increase",
+      "name_simple": "Competition",
+      "name_transliterated": "At-Takaathur",
       "revelation_place": "makkah",
       "verse_count": 8,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31810,9 +32033,11 @@
     {
       "number": 103,
       "name_arabic": "العصر",
-      "name_simple": "The Declining Day",
+      "name_simple": "The Declining Day, Epoch",
+      "name_transliterated": "Al-Asr",
       "revelation_place": "makkah",
       "verse_count": 3,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31835,8 +32060,10 @@
       "number": 104,
       "name_arabic": "الهمزة",
       "name_simple": "The Traducer",
+      "name_transliterated": "Al-Humaza",
       "revelation_place": "makkah",
       "verse_count": 9,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31889,8 +32116,10 @@
       "number": 105,
       "name_arabic": "الفيل",
       "name_simple": "The Elephant",
+      "name_transliterated": "Al-Fil",
       "revelation_place": "makkah",
       "verse_count": 5,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31923,8 +32152,10 @@
       "number": 106,
       "name_arabic": "قريش",
       "name_simple": "Quraysh",
+      "name_transliterated": "Quraish",
       "revelation_place": "makkah",
       "verse_count": 4,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31951,9 +32182,11 @@
     {
       "number": 107,
       "name_arabic": "الماعون",
-      "name_simple": "The Small kindnesses",
+      "name_simple": "Almsgiving",
+      "name_transliterated": "Al-Maa'un",
       "revelation_place": "makkah",
       "verse_count": 7,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -31995,9 +32228,11 @@
     {
       "number": 108,
       "name_arabic": "الكوثر",
-      "name_simple": "The Abundance",
+      "name_simple": "Abundance",
+      "name_transliterated": "Al-Kawthar",
       "revelation_place": "makkah",
       "verse_count": 3,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -32020,8 +32255,10 @@
       "number": 109,
       "name_arabic": "الكافرون",
       "name_simple": "The Disbelievers",
+      "name_transliterated": "Al-Kaafiroon",
       "revelation_place": "makkah",
       "verse_count": 6,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -32058,9 +32295,11 @@
     {
       "number": 110,
       "name_arabic": "النصر",
-      "name_simple": "The Divine Support",
+      "name_simple": "Divine Support",
+      "name_transliterated": "An-Nasr",
       "revelation_place": "madinah",
       "verse_count": 3,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -32082,9 +32321,11 @@
     {
       "number": 111,
       "name_arabic": "المسد",
-      "name_simple": "The Palm Fiber",
+      "name_simple": "The Palm Fibre",
+      "name_transliterated": "Al-Masad",
       "revelation_place": "makkah",
       "verse_count": 5,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -32116,9 +32357,11 @@
     {
       "number": 112,
       "name_arabic": "الإخلاص",
-      "name_simple": "The Sincerity",
+      "name_simple": "Sincerity",
+      "name_transliterated": "Al-Ikhlaas",
       "revelation_place": "makkah",
       "verse_count": 4,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -32145,9 +32388,11 @@
     {
       "number": 113,
       "name_arabic": "الفلق",
-      "name_simple": "The Daybreak",
+      "name_simple": "The Dawn",
+      "name_transliterated": "Al-Falaq",
       "revelation_place": "makkah",
       "verse_count": 5,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,
@@ -32180,8 +32425,10 @@
       "number": 114,
       "name_arabic": "الناس",
       "name_simple": "Mankind",
+      "name_transliterated": "An-Naas",
       "revelation_place": "makkah",
       "verse_count": 6,
+      "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
       "ayahs": [
         {
           "verse_number": 1,

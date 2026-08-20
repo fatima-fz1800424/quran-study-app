@@ -18,6 +18,7 @@ class SurahSummary {
     required this.number,
     required this.nameArabic,
     required this.nameSimple,
+    required this.nameTransliterated,
     required this.revelationPlace,
     required this.verseCount,
   });
@@ -25,6 +26,11 @@ class SurahSummary {
   final int number;
   final String nameArabic;
   final String nameSimple;
+
+  /// The surah's transliterated Arabic name, e.g. "Al-Baqara". Searchable, so
+  /// looking for "baqara" works as well as looking for the English meaning.
+  final String nameTransliterated;
+
   final String revelationPlace;
   final int verseCount;
 }
@@ -99,6 +105,8 @@ class QuranDataLoader {
             number: surah['number'] as int,
             nameArabic: surah['name_arabic'] as String,
             nameSimple: surah['name_simple'] as String,
+            nameTransliterated:
+                surah['name_transliterated'] as String? ?? '',
             revelationPlace: surah['revelation_place'] as String,
             verseCount: surah['verse_count'] as int,
           ),
