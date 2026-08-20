@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 /// Seam over the platform speech plugins.
@@ -30,6 +31,14 @@ abstract class VoiceService {
   Future<void> speak(String text);
 
   Future<void> stopSpeaking();
+
+  /// Short tone marking the microphone opening, and a different one for it
+  /// closing. Sound is a second channel alongside the button's own state, for
+  /// anyone not watching the button - and the visual state covers anyone with
+  /// sound off, so neither signal is load-bearing on its own.
+  Future<void> playListenStartCue();
+
+  Future<void> playListenStopCue();
 }
 
 class PlatformVoiceService implements VoiceService {
@@ -40,6 +49,8 @@ class PlatformVoiceService implements VoiceService {
   final SpeechToText _speech;
   final FlutterTts _tts;
   bool _prepared = false;
+  AudioPlayer? _startCue;
+  AudioPlayer? _stopCue;
 
   @override
   Future<bool> prepare() async {
@@ -98,16 +109,38 @@ class PlatformVoiceService implements VoiceService {
   Future<void> stopSpeaking() async {
     await _tts.stop();
   }
-}
 
-/// Records that the user has been told their audio leaves the device.
-///
-/// Kept separate from the service so the notice can be shown before the
-/// recogniser is ever started.
-class VoiceNoticeState {
-  const VoiceNoticeState({required this.accepted});
+  @override
+  Future<void> playListenStartCue() => _playCue(
+        _startCue ??= AudioPlayer(),
+        'assets/sounds/mic_start.wav',
+      );
 
-  final bool accepted;
+  @override
+  Future<void> playListenStopCue() => _playCue(
+        _stopCue ??= AudioPlayer(),
+        'assets/sounds/mic_stop.wav',
+      );
+
+  /// Play a cue, reusing one player per sound so repeated taps do not each
+  /// allocate one. A cue that fails is not worth surfacing: the button's own
+  /// state already says whether the microphone is open.
+  Future<void> _playCue(AudioPlayer player, String asset) async {
+    try {
+      if (player.audioSource == null) {
+        await player.setAsset(asset);
+      }
+      await player.seek(Duration.zero);
+      await player.play();
+    } catch (_) {
+      // Ignored on purpose - see above.
+    }
+  }
+
+  Future<void> dispose() async {
+    await _startCue?.dispose();
+    await _stopCue?.dispose();
+  }
 }
 
 final voiceServiceProvider = Provider<VoiceService>(
@@ -129,6 +162,7 @@ class FakeVoiceService implements VoiceService {
   final bool available;
   bool listening = false;
   final List<String> spoken = <String>[];
+  final List<String> cues = <String>[];
   int stopSpeakingCalls = 0;
 
   void Function(String transcript, bool isFinal)? _onTranscript;
@@ -170,5 +204,15 @@ class FakeVoiceService implements VoiceService {
   @override
   Future<void> stopSpeaking() async {
     stopSpeakingCalls++;
+  }
+
+  @override
+  Future<void> playListenStartCue() async {
+    cues.add('start');
+  }
+
+  @override
+  Future<void> playListenStopCue() async {
+    cues.add('stop');
   }
 }

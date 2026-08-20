@@ -576,12 +576,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   int? _highlightedAyah;
   Timer? _highlightTimer;
   Timer? _scrollSettleTimer;
+  bool _scrollMovedDuringCooldown = false;
+  bool _observationScheduled = false;
+  int? _observedVerse;
+  late final LastReadNotifier _lastRead;
 
   static const Duration _highlightHold = Duration(milliseconds: 1600);
 
   @override
   void initState() {
     super.initState();
+    // Captured here so it stays usable during teardown, when `ref` is not.
+    _lastRead = ref.read(lastReadProvider.notifier);
     _pendingScrollToAyah = widget.initialAyah;
     if (widget.highlightInitialAyah) {
       _highlightedAyah = widget.initialAyah;
@@ -633,30 +639,85 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Future<void> _saveLastRead(int ayahNumber) async {
     // The notifier dedupes on the surah and verse together, so it is safe to
     // call this freely, and the surah list sees the change immediately.
-    await ref.read(lastReadProvider.notifier).save(widget.surah.number, ayahNumber);
+    await _lastRead.save(widget.surah.number, ayahNumber);
+  }
+
+  @override
+  void deactivate() {
+    // Last chance to record where the reader actually stopped. Without this,
+    // closing the page within the throttle window discarded the final position.
+    // Uses the last observed verse rather than measuring now: render objects
+    // are already detached by this point.
+    final verse = _observedVerse;
+    if (verse != null) {
+      final surahNumber = widget.surah.number;
+      final notifier = _lastRead;
+      // Deferred off the lifecycle: this runs while the tree is being torn
+      // down, and Riverpod refuses provider writes during a build.
+      Future.microtask(() => notifier.save(surahNumber, verse));
+    }
+    super.deactivate();
   }
 
   static const Duration _scrollSettle = Duration(milliseconds: 250);
 
-  /// Record the read position once scrolling settles.
+  /// Record the read position while scrolling, throttled rather than debounced.
   ///
-  /// Driven by the controller rather than by the position's scrolling state.
-  /// The notifier approach this replaces was fragile: a wheel scroll goes idle
-  /// before the new offset is applied, so the position was read from the
-  /// previous frame's layout and lagged behind where the reader actually was.
-  /// A debounce off the controller always sees post-layout geometry, and still
-  /// writes once per gesture rather than once per ayah scrolled past.
+  /// The first scroll event records straight away, then at most one write per
+  /// [_scrollSettle] for as long as scrolling continues. A pure trailing
+  /// debounce looked tidier but lost the position whenever the reader closed
+  /// before the timer fired - which is precisely what scrolling and then
+  /// tapping back does, so the recorded verse stayed at whatever was saved when
+  /// the surah opened.
   void _handleScroll() {
-    _scrollSettleTimer?.cancel();
-    _scrollSettleTimer = Timer(_scrollSettle, () {
-      if (!mounted) {
-        return;
-      }
-      final verse = _topmostVisibleVerse();
-      if (verse != null) {
-        _saveLastRead(verse);
-      }
-    });
+    // Measure after the frame, not here. A scroll notification arrives before
+    // layout has run, so the render boxes still describe the previous frame and
+    // every reading lags a step behind. Coalesced to one measurement per frame.
+    if (_observationScheduled) {
+      return;
+    }
+    _observationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _observeAndPersist());
+  }
+
+  /// Note where the reader is, and write it if the throttle allows.
+  ///
+  /// The observation is kept even when the write is throttled, so teardown has
+  /// a current position to flush without measuring anything itself.
+  void _observeAndPersist() {
+    _observationScheduled = false;
+    if (!mounted) {
+      return;
+    }
+    final verse = _topmostVisibleVerse();
+    if (verse == null) {
+      return;
+    }
+    _observedVerse = verse;
+
+    if (_scrollSettleTimer != null) {
+      _scrollMovedDuringCooldown = true;
+      return;
+    }
+    _saveLastRead(verse);
+    _scrollSettleTimer = Timer(_scrollSettle, _afterScrollCooldown);
+  }
+
+  void _afterScrollCooldown() {
+    _scrollSettleTimer = null;
+    if (!_scrollMovedDuringCooldown || !mounted) {
+      return;
+    }
+    _scrollMovedDuringCooldown = false;
+    _persistObservedVerse();
+    _scrollSettleTimer = Timer(_scrollSettle, _afterScrollCooldown);
+  }
+
+  void _persistObservedVerse() {
+    final verse = _observedVerse;
+    if (verse != null && mounted) {
+      _saveLastRead(verse);
+    }
   }
 
   /// The verse number of the topmost ayah still visible in the viewport, or
@@ -667,7 +728,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       return null;
     }
     final listBox = listContext.findRenderObject() as RenderBox?;
-    if (listBox == null || !listBox.hasSize) {
+    if (listBox == null || !listBox.attached || !listBox.hasSize) {
       return null;
     }
     final viewportTop = listBox.localToGlobal(Offset.zero).dy;
@@ -679,7 +740,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         continue;
       }
       final box = ayahContext.findRenderObject() as RenderBox?;
-      if (box == null || !box.hasSize) {
+      if (box == null || !box.attached || !box.hasSize) {
         continue;
       }
       if (box.localToGlobal(Offset.zero).dy + box.size.height <= viewportTop) {
@@ -1128,10 +1189,11 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
     final voice = ref.read(voiceServiceProvider);
 
     if (_listening) {
+      // Cleared first: stopping the recogniser also fires its own done
+      // callback, and without this both paths would play the stop tone.
+      setState(() => _listening = false);
       await voice.stopListening();
-      if (mounted) {
-        setState(() => _listening = false);
-      }
+      await voice.playListenStopCue();
       return;
     }
 
@@ -1143,6 +1205,9 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
     }
 
     setState(() => _listening = true);
+    // Before the recogniser opens, so the tone marks the moment the microphone
+    // actually goes live rather than trailing it.
+    await voice.playListenStartCue();
     await voice.startListening(
       onTranscript: (transcript, isFinal) {
         if (!mounted) {
@@ -1159,9 +1224,15 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
         });
       },
       onDone: () {
-        if (mounted) {
-          setState(() => _listening = false);
+        if (!mounted) {
+          return;
         }
+        // The recogniser can stop on its own, after a silence. That is still a
+        // stop, so it gets the same tone as tapping the button.
+        if (_listening) {
+          voice.playListenStopCue();
+        }
+        setState(() => _listening = false);
       },
     );
   }
@@ -1507,17 +1578,9 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                   // Hidden rather than disabled where speech is unsupported, so
                   // it never looks like a broken control.
                   if (ref.watch(voiceAvailableProvider).valueOrNull ?? false)
-                    IconButton(
+                    _MicButton(
+                      listening: _listening,
                       onPressed: _toggleListening,
-                      icon: Icon(
-                        _listening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                        color: _listening
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                      tooltip: _listening
-                          ? 'Stop dictating'
-                          : 'Dictate a question (audio is sent off device)',
                     ),
                   Container(
                     decoration: BoxDecoration(
@@ -1534,6 +1597,108 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The dictation button, which has to look unmistakably live while recording.
+///
+/// Carries the visual half of the recording signal: a filled error-coloured
+/// circle, a solid icon, and a slow pulsing ring. The tones are the audible
+/// half. Either alone is enough to tell whether the microphone is open, which
+/// matters for anyone running with sound off, and for anyone not looking at the
+/// button when it opens.
+class _MicButton extends StatefulWidget {
+  const _MicButton({required this.listening, required this.onPressed});
+
+  final bool listening;
+  final VoidCallback onPressed;
+
+  @override
+  State<_MicButton> createState() => _MicButtonState();
+}
+
+class _MicButtonState extends State<_MicButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.listening) {
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_MicButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.listening == oldWidget.listening) {
+      return;
+    }
+    if (widget.listening) {
+      _pulse.repeat(reverse: true);
+    } else {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final listening = widget.listening;
+
+    return Semantics(
+      label: listening ? 'Stop dictating' : 'Dictate a question',
+      toggled: listening,
+      button: true,
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) {
+          final spread = listening ? 3 + (_pulse.value * 5) : 0.0;
+          return Container(
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: listening
+                  ? theme.colorScheme.error
+                  : Colors.transparent,
+              boxShadow: listening
+                  ? [
+                      BoxShadow(
+                        color: theme.colorScheme.error.withOpacity(0.35),
+                        blurRadius: spread,
+                        spreadRadius: spread,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: child,
+          );
+        },
+        child: IconButton(
+          onPressed: widget.onPressed,
+          icon: Icon(
+            listening ? Icons.mic_rounded : Icons.mic_none_rounded,
+            color: listening
+                ? theme.colorScheme.onError
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+          tooltip: listening
+              ? 'Stop dictating'
+              : 'Dictate a question (audio is sent off device)',
         ),
       ),
     );

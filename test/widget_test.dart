@@ -280,6 +280,136 @@ void main() {
     expect(prefs.getInt('last_read_ayah'), recorded?.ayahNumber);
   });
 
+  testWidgets('every scroll updates the ayah, not just the first', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    QuranDataLoader.seedCorpusForTests(_fakeCorpus());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final surahs = await QuranDataLoader.loadSurahs();
+    final baqarah = surahs.firstWhere((s) => s.number == 2);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: ReaderPage(surah: baqarah)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    int recorded() => container.read(lastReadProvider)?.ayahNumber ?? -1;
+    expect(recorded(), 1);
+
+    final seen = <int>[recorded()];
+    for (var step = 0; step < 3; step++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      seen.add(recorded());
+    }
+
+    // Each scroll must move the recorded position on. Freezing after the first
+    // is the reported bug.
+    for (var i = 1; i < seen.length; i++) {
+      expect(
+        seen[i],
+        greaterThan(seen[i - 1]),
+        reason: 'scroll $i did not advance the recorded ayah: $seen',
+      );
+    }
+  });
+
+  testWidgets('leaving straight after a scroll still records the position', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    QuranDataLoader.seedCorpusForTests(_fakeCorpus());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final surahs = await QuranDataLoader.loadSurahs();
+    final baqarah = surahs.firstWhere((s) => s.number == 2);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: ReaderPage(surah: baqarah)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(container.read(lastReadProvider)?.ayahNumber, 1);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pump();
+
+    // Leave immediately, without waiting out the settle delay. A reader who
+    // scrolls and taps back must not lose their place.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: Text('elsewhere'))),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      container.read(lastReadProvider)?.ayahNumber,
+      greaterThan(1),
+      reason: 'the scrolled position was lost when the reader closed',
+    );
+  });
+
+  testWidgets('a throttled scroll is still flushed when the reader closes', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    QuranDataLoader.seedCorpusForTests(_fakeCorpus());
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final surahs = await QuranDataLoader.loadSurahs();
+    final baqarah = surahs.firstWhere((s) => s.number == 2);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: ReaderPage(surah: baqarah)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    // First scroll writes immediately and opens the throttle window.
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump();
+    final afterFirst = container.read(lastReadProvider)!.ayahNumber;
+    expect(afterFirst, greaterThan(1));
+
+    // Second scroll lands inside that window, so it is observed but not
+    // written - the position a reader would lose by leaving right now.
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump();
+    expect(container.read(lastReadProvider)!.ayahNumber, afterFirst);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: Text('elsewhere'))),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      container.read(lastReadProvider)!.ayahNumber,
+      greaterThan(afterFirst),
+      reason: 'closing the reader must flush the throttled position',
+    );
+  });
+
   test('the last-read notifier writes through and dedupes', () async {
     SharedPreferences.setMockInitialValues({});
     final container = ProviderContainer();
@@ -353,6 +483,60 @@ void main() {
     await tester.tap(find.byTooltip('Send question'));
     await tester.pump();
     expect(find.text('Question'), findsOneWidget);
+  });
+
+  testWidgets('starting and stopping the mic play different tones', (
+    WidgetTester tester,
+  ) async {
+    final voice = await pumpAssistantWithVoice(tester);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+    expect(voice.cues, ['start']);
+
+    await tester.tap(find.byIcon(Icons.mic_rounded));
+    await tester.pump();
+    // Distinct tones, so the two events are not merely audible but told apart.
+    expect(voice.cues, ['start', 'stop']);
+  });
+
+  testWidgets('the recogniser stopping on its own also plays the stop tone', (
+    WidgetTester tester,
+  ) async {
+    final voice = await pumpAssistantWithVoice(tester);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+
+    // A silence timeout is still a stop, and the user needs to hear it.
+    await voice.stopListening();
+    await tester.pump();
+
+    expect(voice.cues, ['start', 'stop']);
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+  });
+
+  testWidgets('the mic button looks different while listening', (
+    WidgetTester tester,
+  ) async {
+    await pumpAssistantWithVoice(tester);
+
+    // Idle: outline icon, no fill.
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.mic_rounded), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.mic_none_rounded));
+    await tester.pump();
+
+    // Listening: solid icon, and the button reports its toggled state so the
+    // change is not carried by colour alone.
+    expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none_rounded), findsNothing);
+    expect(find.bySemanticsLabel('Stop dictating'), findsOneWidget);
+
+    // The pulse is animating, so frames keep being produced.
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
   });
 
   testWidgets('partial transcripts keep replacing the pending text', (

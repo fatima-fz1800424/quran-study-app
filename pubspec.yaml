@@ -42,6 +42,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
+  just_audio: ^0.10.6
 
 dev_dependencies:
   flutter_test:
@@ -71,6 +72,8 @@ flutter:
     - assets/quran.sqlite
     - assets/quran_import_manifest.json
     - assets/quran_reader_data.json
+    - assets/sounds/mic_start.wav
+    - assets/sounds/mic_stop.wav
 
   fonts:
     - family: AmiriQuran
