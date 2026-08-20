@@ -21,7 +21,10 @@ the Android SDK is not installed in the development environment.
 | Study assistant: retrieval, refusals, citations, progress stages | Working |
 | Citation chips that open the cited verse in the reader | Working |
 | Voice dictation and read-aloud (assistant tab, Chrome) | Working |
-| **Audio recitation, reciter selection, offline download** | **Not built** |
+| Audio recitation, verse by verse, with highlight and auto-scroll | Working |
+| Reciter selection (12 Quran.com reciters) | Working |
+| **Full-surah playback mode (mp3quran reciters)** | **Not built** |
+| **Download-for-offline audio** | **Not built** - see limitations |
 | **Juz / Hizb browsing, go-to-ayah jump** | **Not built** |
 | **Firebase bookmark sync** | **Not built** |
 | **Tafsir corpus** | **Out of scope** - see Data sources |
@@ -87,8 +90,8 @@ backend proxy.
 ### Tests
 
 ```bash
-flutter test          # 24 tests
-cd backend && python -m pytest   # 69 tests
+flutter test          # 43 tests
+cd backend && python -m pytest   # 70 tests
 ```
 
 Backend tests mock the model call, so they need no API key and no network.
@@ -148,6 +151,7 @@ lib/
   main.dart              app shell, theme, settings state
   surah_list_page.dart   surah list, reader, assistant   (monolithic - see below)
   voice.dart             speech seam + platform implementation
+  recitation.dart        recitation seam, url templates, reciter state
   data/                  corpus validation rules (shared with the importer)
 backend/
   app.py                 FastAPI endpoints

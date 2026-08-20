@@ -113,6 +113,74 @@ Next steps recommended:
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
 
+## Audio recitation: two modes, and why (2026-08-20)
+
+Stage 3 ships two distinct playback modes rather than one. That is forced by
+what the available sources actually publish, not by a UI preference.
+
+### Verse by verse - Quran.com CDN
+
+Per-ayah playback with verse highlighting and auto-scroll needs one audio file
+per ayah. Four sources publish ayah-level files:
+
+| Source | Reciters | Ayah-level files | Stated terms |
+|--------|----------|------------------|--------------|
+| Quran.com / Quran Foundation | 12 | yes | yes, quoted below |
+| EveryAyah.com | 60+ | yes | **none found** |
+| AlQuran Cloud | 189 editions | yes | not checked for audio |
+| QuranicAudio.com | 177 qaris | whole surah | not checked |
+
+Verified against the live API: `GET /api/v4/recitations/{id}/by_ayah/{s}:{a}`
+returns a relative path such as `Alafasy/mp3/002255.mp3`, served from
+`https://verses.quran.com/` and `https://audio.qurancdn.com/`, both answering
+200 with `Access-Control-Allow-Origin: *` and `Accept-Ranges: bytes`. Measured
+sizes run from 143KB for 1:1 to 3.97MB for 2:282 at 128kbps.
+
+**EveryAyah is deliberately not used.** Its pages carry no copyright notice,
+licence or terms for the audio. The only stated terms on the site cover the
+*timing files*: "(C) VerseByVerseQuran.com You must link back to our site from
+your product and web-site to use these timings", and that licence link now
+404s. The widely repeated claim that its audio is CC-BY-NC traces to an outside
+commenter on a GitHub issue, not to the site or any maintainer, and its Internet
+Archive mirror carries no `licenseurl` or `rights` field. Absence of a
+prohibition is not permission, and the recitation is a performance - separately
+copyrightable from the Quran text.
+
+Audio is streamed, never bundled. One reciter is 825MB at 64kbps and 1,629MB at
+128kbps, measured from the bulk archive sizes. Storing it would also conflict
+with the Quran Foundation one-week cache limit that moved the text to Tanzil.
+
+### Full surah - mp3quran.net
+
+Per-ayah playback cannot cover every reciter, because most sources only publish
+whole-surah files. Haitham al-Dokhain is the case that forced this: he is absent
+from all four ayah-level sources above, and present on mp3quran.net as reciter
+id 273 with all 114 surahs, but only as whole-surah audio. Verified: `001.mp3`
+is 0.9MB, `002.mp3` is 86MB, and a per-ayah path returns 404. With no ayah
+boundaries there is nothing to highlight or scroll to, so this mode is a single
+continuous player with no verse tracking. That is the honest presentation of
+what the files support.
+
+mp3quran.net does grant permission explicitly, which EveryAyah does not. From
+https://www.mp3quran.net/eng/privacy:
+
+> "Copyrights: All rights are available to everyone, and we allow any visitor or
+> developer to copy any material or use any link on the websites"
+
+and in Arabic on the same page:
+
+> "الحقوق: جميع الحقوق متاحة للجميع و يحق لأي زائر أو مطور استخدام اي مادة أو
+> رابط من الموقع"
+
+**Two limits on that grant, recorded because they matter.** It is a
+*redistributor's* grant: mp3quran can only pass on rights it holds, and while
+they publish signed cooperation agreements with some reciters, no chain of title
+for al-Dokhain specifically was verified. And it names no licence, no version,
+no attribution requirement and gives no warranty - it is a broad informal
+statement on a privacy page, not a terms document. It clears the bar of being an
+affirmative permission rather than mere silence, which is the standard applied
+here, but it is weaker evidence than a named licence would be.
+
 ## Arabic text moved from Quran.com to Tanzil (2026-08-20)
 
 ### Why

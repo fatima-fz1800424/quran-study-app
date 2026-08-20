@@ -16,6 +16,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:quran_study_app/main.dart';
+import 'package:quran_study_app/recitation.dart';
 import 'package:quran_study_app/surah_list_page.dart';
 import 'package:quran_study_app/voice.dart';
 
@@ -609,6 +610,193 @@ void main() {
     await pumpAssistantWithVoice(tester);
 
     expect(find.byIcon(Icons.volume_up_outlined), findsNothing);
+  });
+
+  group('recitation url templates', () {
+    test('a relative path resolves against the verses CDN', () {
+      expect(
+        audioTemplateFromApiPath('Alafasy/mp3/002255.mp3'),
+        'https://verses.quran.com/Alafasy/mp3/$kRefPlaceholder.mp3',
+      );
+    });
+
+    test('a protocol-relative mirror URL is kept absolute and https', () {
+      // Three of the twelve reciters answer with this shape instead.
+      expect(
+        audioTemplateFromApiPath(
+          '//mirrors.quranicaudio.com/everyayah/Husary_64kbps/002255.mp3',
+        ),
+        'https://mirrors.quranicaudio.com/everyayah/Husary_64kbps/'
+            '$kRefPlaceholder.mp3',
+      );
+    });
+
+    test('a reciter folder containing digits is not mistaken for the verse', () {
+      // Husary_64kbps has digits in it, but only a six-digit run is the token,
+      // and only the last one.
+      final template = audioTemplateFromApiPath(
+        '//mirrors.quranicaudio.com/everyayah/Husary_64kbps/002255.mp3',
+      )!;
+      expect(template.contains('64kbps'), isTrue);
+      expect(template.contains('002255'), isFalse);
+    });
+
+    test('nested paths keep their style segment', () {
+      expect(
+        audioTemplateFromApiPath('AbdulBaset/Mujawwad/mp3/001001.mp3'),
+        'https://verses.quran.com/AbdulBaset/Mujawwad/mp3/$kRefPlaceholder.mp3',
+      );
+    });
+
+    test('a path with no verse token is rejected rather than guessed', () {
+      expect(audioTemplateFromApiPath('Alafasy/mp3/index.html'), isNull);
+      expect(audioTemplateFromApiPath(''), isNull);
+    });
+
+    test('the template builds the right url for any ayah', () {
+      const source = RecitationSource(
+        reciter: Reciter(id: 7, name: 'Alafasy'),
+        template: 'https://verses.quran.com/Alafasy/mp3/$kRefPlaceholder.mp3',
+      );
+      expect(
+        source.urlFor(2, 255),
+        'https://verses.quran.com/Alafasy/mp3/002255.mp3',
+      );
+      // Zero padding on both halves, which the filenames require.
+      expect(
+        source.urlFor(1, 1),
+        'https://verses.quran.com/Alafasy/mp3/001001.mp3',
+      );
+      expect(
+        source.urlFor(114, 6),
+        'https://verses.quran.com/Alafasy/mp3/114006.mp3',
+      );
+    });
+
+    test('verse tokens are zero padded to three digits each', () {
+      expect(verseToken(1, 1), '001001');
+      expect(verseToken(2, 286), '002286');
+      expect(verseToken(114, 6), '114006');
+    });
+  });
+
+  group('verse by verse recitation', () {
+    Future<FakeRecitationService> openReader(WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      QuranDataLoader.seedCorpusForTests(_fakeCorpus(verses: 20));
+      final audio = FakeRecitationService();
+      final container = ProviderContainer(
+        overrides: [recitationServiceProvider.overrideWithValue(audio)],
+      );
+      addTearDown(container.dispose);
+
+      final surahs = await QuranDataLoader.loadSurahs();
+      await container
+          .read(reciterProvider.notifier)
+          .restore(await audio.loadReciters());
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: ReaderPage(surah: surahs.firstWhere((s) => s.number == 2)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      return audio;
+    }
+
+    testWidgets('tapping play queues the whole surah from that verse', (
+      tester,
+    ) async {
+      final audio = await openReader(tester);
+
+      await tester.tap(find.byIcon(Icons.play_circle_outline).first);
+      await tester.pump();
+
+      expect(audio.playing, isTrue);
+      // The queue covers the surah, not just the tapped ayah, so playback
+      // continues without a further gesture the browser would block.
+      expect(audio.requestedUrls.length, 20);
+      expect(audio.requestedUrls.first, endsWith('002001.mp3'));
+      expect(audio.requestedUrls.last, endsWith('002020.mp3'));
+    });
+
+    testWidgets('the reciting verse is marked and tapping again stops', (
+      tester,
+    ) async {
+      final audio = await openReader(tester);
+
+      await tester.tap(find.byIcon(Icons.play_circle_outline).first);
+      await tester.pump();
+
+      // The playing row swaps to a stop control; the others stay as play.
+      expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+      expect(find.byTooltip('Stop reciting'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.stop_circle_outlined));
+      await tester.pump();
+
+      expect(audio.stopCalls, greaterThan(0));
+      expect(find.byIcon(Icons.stop_circle_outlined), findsNothing);
+    });
+
+    testWidgets('the highlight follows the queue as it advances', (
+      tester,
+    ) async {
+      final audio = await openReader(tester);
+
+      await tester.tap(find.byIcon(Icons.play_circle_outline).first);
+      await tester.pump();
+      expect(find.byTooltip('Stop reciting'), findsOneWidget);
+
+      // Only one verse is ever marked as reciting, including after advancing.
+      audio.advanceTo(3);
+      await tester.pump();
+      expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+
+      audio.finish();
+      await tester.pump();
+      expect(find.byIcon(Icons.stop_circle_outlined), findsNothing);
+    });
+
+    testWidgets('recitation records the read position as it moves', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      QuranDataLoader.seedCorpusForTests(_fakeCorpus(verses: 20));
+      final audio = FakeRecitationService();
+      final container = ProviderContainer(
+        overrides: [recitationServiceProvider.overrideWithValue(audio)],
+      );
+      addTearDown(container.dispose);
+
+      final surahs = await QuranDataLoader.loadSurahs();
+      await container
+          .read(reciterProvider.notifier)
+          .restore(await audio.loadReciters());
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: ReaderPage(surah: surahs.firstWhere((s) => s.number == 2)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.play_circle_outline).first);
+      await tester.pump();
+      audio.advanceTo(7);
+      await tester.pump();
+
+      // Listening is reading: resume should return to where the audio got to.
+      expect(container.read(lastReadProvider)?.ayahNumber, 7);
+    });
   });
 
   group('assistant reference chips', () {

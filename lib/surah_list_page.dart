@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'main.dart';
+import 'recitation.dart';
 import 'voice.dart';
 
 const String kQuranBackendBaseUrl = 'http://127.0.0.1:8123';
@@ -623,18 +624,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   int? _highlightedAyah;
   Timer? _highlightTimer;
   Timer? _scrollSettleTimer;
+
+  /// The ayah currently being recited, or null when nothing is playing. Drives
+  /// the playing highlight and the auto-scroll that follows the recitation.
+  int? _playingVerse;
+  bool _audioBusy = false;
+  String? _audioError;
   bool _scrollMovedDuringCooldown = false;
   bool _observationScheduled = false;
   int? _observedVerse;
   late final LastReadNotifier _lastRead;
+  late final RecitationService _recitation;
 
   static const Duration _highlightHold = Duration(milliseconds: 1600);
 
   @override
   void initState() {
     super.initState();
-    // Captured here so it stays usable during teardown, when `ref` is not.
+    // Captured here so they stay usable during teardown, when `ref` is not.
     _lastRead = ref.read(lastReadProvider.notifier);
+    _recitation = ref.read(recitationServiceProvider);
     _pendingScrollToAyah = widget.initialAyah;
     if (widget.highlightInitialAyah) {
       _highlightedAyah = widget.initialAyah;
@@ -660,6 +669,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   @override
   void dispose() {
+    // Leaving the reader must not leave audio playing behind it. Uses the
+    // captured service: `ref` is already dead by dispose.
+    _recitation.stop();
     _highlightTimer?.cancel();
     _scrollSettleTimer?.cancel();
     _scrollController.removeListener(_handleScroll);
@@ -767,6 +779,98 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     }
   }
 
+  /// Start reciting from [verse], or stop if that verse is already playing.
+  ///
+  /// Playback always goes through one queued player rather than one player per
+  /// ayah: browsers gate audible playback on a user gesture, and this tap is
+  /// that gesture for the whole queue.
+  Future<void> _toggleRecitation(int verse, List<AyahEntry> ayahs) async {
+    final service = _recitation;
+
+    if (_playingVerse == verse) {
+      await service.stop();
+      if (mounted) {
+        setState(() => _playingVerse = null);
+      }
+      return;
+    }
+
+    setState(() {
+      _audioBusy = true;
+      _audioError = null;
+    });
+
+    try {
+      final reciter = ref.read(reciterProvider);
+      if (reciter == null) {
+        setState(() => _audioError = 'No reciter selected yet.');
+        return;
+      }
+      final source = await service.resolveSource(reciter);
+      if (!mounted) {
+        return;
+      }
+      if (source == null) {
+        setState(() => _audioError =
+            'Could not find audio for ${reciter.label}. Try another reciter.');
+        return;
+      }
+
+      await service.play(
+        source: source,
+        surah: widget.surah.number,
+        verses: ayahs.map((ayah) => ayah.verseNumber).toList(),
+        startVerse: verse,
+        onVerse: (playing) {
+          if (!mounted) {
+            return;
+          }
+          setState(() => _playingVerse = playing);
+          // Recitation drives the view, so the reader does not have to.
+          _scrollToVerse(playing);
+          // Where the user is listening is where they are reading.
+          _saveLastRead(playing);
+        },
+        onDone: () {
+          if (mounted) {
+            setState(() => _playingVerse = null);
+          }
+        },
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _audioError =
+            'Recitation could not be played. Check your connection.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _audioBusy = false);
+      }
+    }
+  }
+
+  /// Bring [verse] into view, used to follow the recitation.
+  void _scrollToVerse(int verse) {
+    final index = _indexToVerse.entries
+        .firstWhere(
+          (entry) => entry.value == verse,
+          orElse: () => const MapEntry(-1, -1),
+        )
+        .key;
+    if (index < 0) {
+      return;
+    }
+    final context = _ayahKeys[index]?.currentContext;
+    if (context == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      context,
+      alignment: 0.3,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
   /// The verse number of the topmost ayah still visible in the viewport, or
   /// null while the list has not been laid out yet.
   int? _topmostVisibleVerse() {
@@ -871,6 +975,55 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    _SettingsSection(
+                      title: 'Recitation',
+                      children: [
+                        Consumer(
+                          builder: (context, ref, child) {
+                            final selected = ref.watch(reciterProvider);
+                            final available = ref.watch(recitersProvider);
+                            return available.when(
+                              loading: () => const ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text('Loading reciters...'),
+                              ),
+                              error: (error, _) => const ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text('Reciters unavailable'),
+                                subtitle: Text(
+                                  'Recitation needs a connection. Reading does not.',
+                                ),
+                              ),
+                              data: (reciters) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Reciter'),
+                                subtitle: Text(
+                                  selected?.label ?? 'Choose a reciter',
+                                ),
+                                trailing: DropdownButton<Reciter>(
+                                  value: selected,
+                                  underline: const SizedBox.shrink(),
+                                  items: [
+                                    for (final reciter in reciters)
+                                      DropdownMenuItem(
+                                        value: reciter,
+                                        child: Text(reciter.label),
+                                      ),
+                                  ],
+                                  onChanged: (reciter) {
+                                    if (reciter != null) {
+                                      ref
+                                          .read(reciterProvider.notifier)
+                                          .select(reciter);
+                                    }
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                     _SettingsSection(
                       title: 'Appearance',
                       children: [
@@ -994,6 +1147,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           }
 
           final ayahs = snapshot.data ?? const <AyahEntry>[];
+          final audioError = _audioError;
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_pendingScrollToAyah == null) {
@@ -1006,6 +1160,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             }
             _pendingScrollToAyah = null;
           });
+
+          if (audioError != null) {
+            // Reported inline rather than as a snackbar: the reader may be
+            // scrolled anywhere, and a transient toast is easy to miss.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              messenger?.hideCurrentSnackBar();
+              messenger?.showSnackBar(SnackBar(content: Text(audioError)));
+              setState(() => _audioError = null);
+            });
+          }
 
           return ListView.separated(
             key: _listKey,
@@ -1025,6 +1191,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
               final isBookmarked = _bookmarks.contains('${widget.surah.number}:${ayah.verseNumber}');
               final showTranslation = _showTranslations && ayah.translation.trim().isNotEmpty;
               final isHighlighted = _highlightedAyah == ayah.verseNumber;
+              final isReciting = _playingVerse == ayah.verseNumber;
 
               return Center(
                 child: ConstrainedBox(
@@ -1036,9 +1203,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                     duration: const Duration(milliseconds: 300),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      color: isHighlighted
-                          ? theme.colorScheme.tertiary.withOpacity(0.16)
-                          : Colors.transparent,
+                      // The reciting tint is the stronger of the two: it
+                      // tracks something moving, so it has to be findable at a
+                      // glance while scrolling.
+                      color: isReciting
+                          ? theme.colorScheme.primary.withOpacity(0.16)
+                          : isHighlighted
+                              ? theme.colorScheme.tertiary.withOpacity(0.16)
+                              : Colors.transparent,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Column(
@@ -1065,6 +1237,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                               ),
                             ),
                             const Spacer(),
+                            IconButton(
+                              tooltip: isReciting
+                                  ? 'Stop reciting'
+                                  : 'Recite from this verse',
+                              icon: Icon(
+                                isReciting
+                                    ? Icons.stop_circle_outlined
+                                    : Icons.play_circle_outline,
+                                color: isReciting
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                              onPressed: _audioBusy
+                                  ? null
+                                  : () => _toggleRecitation(
+                                        ayah.verseNumber,
+                                        ayahs,
+                                      ),
+                            ),
                             IconButton(
                               tooltip: isBookmarked ? 'Remove bookmark' : 'Add bookmark',
                               icon: Icon(
