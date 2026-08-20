@@ -5,10 +5,14 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:quran_study_app/main.dart';
@@ -605,6 +609,129 @@ void main() {
     await pumpAssistantWithVoice(tester);
 
     expect(find.byIcon(Icons.volume_up_outlined), findsNothing);
+  });
+
+  group('assistant reference chips', () {
+    /// Drive the assistant with scripted backend replies.
+    Future<void> ask(
+      WidgetTester tester, {
+      required Map<String, dynamic> plan,
+      required Map<String, dynamic> answer,
+    }) async {
+      SharedPreferences.setMockInitialValues({'voice_notice_accepted': true});
+      final client = MockClient((request) async {
+        final body = request.url.path.endsWith('/plan') ? plan : answer;
+        return http.Response(
+          jsonEncode(body),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+      final container = ProviderContainer(
+        overrides: [httpClientProvider.overrideWithValue(client)],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const QuranStudyApp(),
+        ),
+      );
+      container.read(selectedTabProvider.notifier).state = kAssistantTabIndex;
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField).first, 'test question');
+      await tester.tap(find.byTooltip('Send question'));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    testWidgets('a decline shows no chips at all', (tester) async {
+      await ask(
+        tester,
+        // Retrieval found verses, but none of them support an answer.
+        plan: {
+          'status': 'ok',
+          'references': ['16:68', '16:69', '2:1', '2:2', '2:3'],
+          'verses': [],
+          'answer': '',
+        },
+        answer: {
+          'status': 'no_source',
+          'answer': 'The verses I have do not answer this question.',
+          'references': ['16:68', '16:69', '2:1', '2:2', '2:3'],
+          'citations': <String>[],
+        },
+      );
+
+      expect(
+        find.textContaining('do not answer this question'),
+        findsOneWidget,
+      );
+      expect(find.text('Cited verses'), findsNothing);
+      // Offering retrieved verses under a decline would claim support the
+      // answer explicitly says it does not have.
+      for (final reference in ['16:68', '16:69', '2:1', '2:2', '2:3']) {
+        expect(
+          find.widgetWithText(ActionChip, reference),
+          findsNothing,
+          reason: 'a decline must not show $reference as a source',
+        );
+      }
+    });
+
+    testWidgets('an answer shows only the verses it cited', (tester) async {
+      await ask(
+        tester,
+        plan: {
+          'status': 'ok',
+          'references': ['16:68', '16:69', '16:80', '16:5', '16:66'],
+          'verses': [],
+          'answer': '',
+        },
+        answer: {
+          'status': 'ok',
+          'answer': 'Bees are described in 16:68.',
+          'references': ['16:68', '16:69', '16:80', '16:5', '16:66'],
+          'citations': ['16:68'],
+        },
+      );
+
+      expect(find.text('Cited verses'), findsOneWidget);
+      expect(find.widgetWithText(ActionChip, '16:68'), findsOneWidget);
+      // The other four were retrieved but not used, so they are not sources.
+      for (final reference in ['16:69', '16:80', '16:5', '16:66']) {
+        expect(
+          find.widgetWithText(ActionChip, reference),
+          findsNothing,
+          reason: '$reference was retrieved but not cited',
+        );
+      }
+    });
+
+    testWidgets('a refusal shows no chips, even if the plan sends references', (
+      tester,
+    ) async {
+      await ask(
+        tester,
+        // The backend sends no references with a terminal status today, but the
+        // UI must not depend on that: a decline showing chips is the bug, so it
+        // is pinned here rather than left to the server's good behaviour.
+        plan: {
+          'status': 'refused_ruling',
+          'references': ['2:1', '2:2'],
+          'verses': [],
+          'answer': 'This is a question about religious rulings...',
+        },
+        answer: {'status': 'refused_ruling', 'citations': <String>[]},
+      );
+
+      expect(find.textContaining('This is a question about'), findsOneWidget);
+      expect(find.text('Cited verses'), findsNothing);
+      expect(find.byType(ActionChip), findsNothing);
+    });
   });
 
   group('surah search', () {

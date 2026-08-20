@@ -246,6 +246,10 @@ final selectedTabProvider = StateProvider<int>((ref) => kReadTabIndex);
 /// navigate; cleared by the reader tab once it has handled it.
 final readerTargetProvider = StateProvider<ReaderTarget?>((ref) => null);
 
+/// The HTTP client the assistant talks to the backend with. Overridden in tests
+/// so the assistant's handling of a reply can be exercised without a backend.
+final httpClientProvider = Provider<http.Client>((ref) => http.Client());
+
 /// The last reading position, held in state rather than read once into a Future.
 ///
 /// It has to be state: the surah list is never disposed - it lives in the
@@ -1171,7 +1175,15 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   String? _answer;
   String? _error;
   String? _stage;
+  /// Verses retrieved for this question. Shown while the answer is being
+  /// composed, as progress, never as the answer's sources.
   List<String> _references = const [];
+
+  /// Verses the answer actually cited, verified by the backend against what
+  /// was retrieved. These are the only ones shown as the answer's sources: a
+  /// decline has none, and offering the retrieved verses there would claim
+  /// support the answer does not have.
+  List<String> _citations = const [];
   bool _listening = false;
   bool _speaking = false;
 
@@ -1305,7 +1317,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   /// an error for display.
   Future<Map<String, dynamic>?> _post(String path, String question) async {
     try {
-      final response = await http.post(
+      final response = await ref.read(httpClientProvider).post(
         Uri.parse('$kQuranBackendBaseUrl$path'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'question': question}),
@@ -1363,6 +1375,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
       _answer = null;
       _error = null;
       _references = const [];
+      _citations = const [];
       _stage = _stageSearching;
     });
 
@@ -1382,6 +1395,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
         setState(() {
           _answer = (plan['answer'] as String?) ?? '';
           _references = references;
+          _citations = const [];
         });
         return;
       }
@@ -1399,6 +1413,10 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
       setState(() {
         _answer = (full['answer'] as String?) ?? 'No answer returned.';
         _references = ((full['references'] as List<dynamic>?) ?? const [])
+            .map((item) => item.toString())
+            .toList();
+        // Empty on a decline, and a subset of the retrieved verses otherwise.
+        _citations = ((full['citations'] as List<dynamic>?) ?? const [])
             .map((item) => item.toString())
             .toList();
       });
@@ -1556,17 +1574,17 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                               _error ?? _answer ?? '',
                               style: theme.textTheme.bodyMedium,
                             ),
-                            if (_references.isNotEmpty) ...[
+                            if (_citations.isNotEmpty) ...[
                               const SizedBox(height: 14),
                               Text(
-                                'References',
+                                'Cited verses',
                                 style: theme.textTheme.titleMedium,
                               ),
                               const SizedBox(height: 8),
                               Wrap(
                                 spacing: 8,
                                 runSpacing: 8,
-                                children: _references
+                                children: _citations
                                     .map(
                                       (reference) => ActionChip(
                                         label: Text(reference),

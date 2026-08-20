@@ -452,6 +452,18 @@ def test_search_rejects_a_model_it_has_not_benchmarked(fake_retriever):
     assert fake_retriever.calls == ['patience']
 
 
+def test_prompt_forbids_a_trailing_reference_list(fake_retriever, gemini):
+    """The client renders references itself, so a trailing list appears twice."""
+    app_module.ask({'question': 'what does the Quran say about patience'})
+    prompt = gemini.prompts[0].lower()
+
+    assert 'cite each reference inline' in prompt
+    assert "do not end with a separate 'references'" in prompt
+    # And it must still require citations somewhere, or the citation check
+    # would reject every answer.
+    assert 'must cite the surah:verse references used' in prompt
+
+
 def test_empty_question_is_rejected(fake_retriever, model_must_not_be_called):
     for payload in [{'question': ''}, {'question': '   '}, {}]:
         with pytest.raises(HTTPException) as raised:
