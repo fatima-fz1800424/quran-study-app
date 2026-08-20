@@ -2,13 +2,13 @@
   {
     "variant": "dense_default",
     "model": "sentence-transformers/all-MiniLM-L6-v2",
-    "recall@5": 0.2611111111111111,
-    "mrr": 0.3911111111111111,
-    "time_s": 6.130383800002164,
+    "recall@5": 0.20574074074074075,
+    "mrr": 0.5077777777777778,
+    "time_s": 4.359543600003235,
     "per_query": [
       {
         "query": "patience in hardship",
-        "recall@5": 0.75,
+        "recall@5": 0.3333333333333333,
         "mrr": 0.5,
         "top": [
           "4:104",
@@ -20,8 +20,8 @@
       },
       {
         "query": "what does the Quran say about orphans",
-        "recall@5": 0.5,
-        "mrr": 0.5,
+        "recall@5": 0.4,
+        "mrr": 1.0,
         "top": [
           "4:127",
           "4:6",
@@ -32,7 +32,7 @@
       },
       {
         "query": "charity and giving to the poor",
-        "recall@5": 0.6666666666666666,
+        "recall@5": 0.375,
         "mrr": 1.0,
         "top": [
           "2:215",
@@ -44,7 +44,7 @@
       },
       {
         "query": "the story of Moses and Pharaoh",
-        "recall@5": 0.5,
+        "recall@5": 0.3,
         "mrr": 1.0,
         "top": [
           "28:3",
@@ -92,7 +92,7 @@
       },
       {
         "query": "what does the Quran say about gratitude",
-        "recall@5": 0.25,
+        "recall@5": 0.16666666666666666,
         "mrr": 1.0,
         "top": [
           "31:12",
@@ -116,8 +116,8 @@
       },
       {
         "query": "what does the Quran say about forgiveness",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.1111111111111111,
+        "mrr": 0.25,
         "top": [
           "40:10",
           "40:55",
@@ -128,7 +128,7 @@
       },
       {
         "query": "what does the Quran say about seeking knowledge",
-        "recall@5": 0.25,
+        "recall@5": 0.125,
         "mrr": 0.3333333333333333,
         "top": [
           "22:54",
@@ -152,7 +152,7 @@
       },
       {
         "query": "what does the Quran say about stress and hardship",
-        "recall@5": 0.25,
+        "recall@5": 0.125,
         "mrr": 0.2,
         "top": [
           "4:104",
@@ -200,8 +200,8 @@
       },
       {
         "query": "what does the Quran say about patience and trust in Allah",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.4,
+        "mrr": 1.0,
         "top": [
           "14:12",
           "11:115",
@@ -215,13 +215,13 @@
   {
     "variant": "rerank",
     "model": "sentence-transformers/all-MiniLM-L6-v2",
-    "recall@5": 0.2944444444444444,
-    "mrr": 0.40555555555555556,
-    "time_s": 73.97770239999227,
+    "recall@5": 0.24444444444444446,
+    "mrr": 0.5355555555555556,
+    "time_s": 78.76146629999857,
     "per_query": [
       {
         "query": "patience in hardship",
-        "recall@5": 0.25,
+        "recall@5": 0.2222222222222222,
         "mrr": 0.5,
         "top": [
           "11:115",
@@ -234,7 +234,7 @@
       {
         "query": "what does the Quran say about orphans",
         "recall@5": 0.5,
-        "mrr": 0.25,
+        "mrr": 1.0,
         "top": [
           "2:220",
           "4:127",
@@ -245,7 +245,7 @@
       },
       {
         "query": "charity and giving to the poor",
-        "recall@5": 0.6666666666666666,
+        "recall@5": 0.375,
         "mrr": 1.0,
         "top": [
           "2:273",
@@ -257,7 +257,7 @@
       },
       {
         "query": "the story of Moses and Pharaoh",
-        "recall@5": 0.5,
+        "recall@5": 0.3,
         "mrr": 1.0,
         "top": [
           "28:3",
@@ -305,7 +305,7 @@
       },
       {
         "query": "what does the Quran say about gratitude",
-        "recall@5": 0.25,
+        "recall@5": 0.3333333333333333,
         "mrr": 1.0,
         "top": [
           "31:12",
@@ -317,7 +317,7 @@
       },
       {
         "query": "what does the Quran say about justice",
-        "recall@5": 0.75,
+        "recall@5": 0.5,
         "mrr": 0.5,
         "top": [
           "4:135",
@@ -329,8 +329,8 @@
       },
       {
         "query": "what does the Quran say about forgiveness",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.1111111111111111,
+        "mrr": 0.2,
         "top": [
           "3:31",
           "9:80",
@@ -341,7 +341,7 @@
       },
       {
         "query": "what does the Quran say about seeking knowledge",
-        "recall@5": 0.25,
+        "recall@5": 0.125,
         "mrr": 0.3333333333333333,
         "top": [
           "22:54",
@@ -353,7 +353,7 @@
       },
       {
         "query": "what does the Quran say about the poor and needy",
-        "recall@5": 0.5,
+        "recall@5": 0.25,
         "mrr": 0.5,
         "top": [
           "30:38",
@@ -413,8 +413,8 @@
       },
       {
         "query": "what does the Quran say about patience and trust in Allah",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.2,
+        "mrr": 1.0,
         "top": [
           "14:12",
           "40:77",
@@ -428,13 +428,13 @@
   {
     "variant": "hybrid",
     "model": "sentence-transformers/all-MiniLM-L6-v2",
-    "recall@5": 0.16666666666666666,
-    "mrr": 0.2833333333333333,
-    "time_s": 6.690985400011414,
+    "recall@5": 0.14333333333333337,
+    "mrr": 0.44666666666666666,
+    "time_s": 8.532788500000606,
     "per_query": [
       {
         "query": "patience in hardship",
-        "recall@5": 0.25,
+        "recall@5": 0.2222222222222222,
         "mrr": 1.0,
         "top": [
           "16:127",
@@ -446,8 +446,8 @@
       },
       {
         "query": "what does the Quran say about orphans",
-        "recall@5": 0.75,
-        "mrr": 0.5,
+        "recall@5": 0.4,
+        "mrr": 1.0,
         "top": [
           "4:127",
           "4:6",
@@ -458,8 +458,8 @@
       },
       {
         "query": "charity and giving to the poor",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.125,
+        "mrr": 0.2,
         "top": [
           "2:263",
           "2:270",
@@ -470,7 +470,7 @@
       },
       {
         "query": "the story of Moses and Pharaoh",
-        "recall@5": 0.5,
+        "recall@5": 0.3,
         "mrr": 1.0,
         "top": [
           "28:3",
@@ -518,7 +518,7 @@
       },
       {
         "query": "what does the Quran say about gratitude",
-        "recall@5": 0.25,
+        "recall@5": 0.16666666666666666,
         "mrr": 1.0,
         "top": [
           "31:12",
@@ -542,8 +542,8 @@
       },
       {
         "query": "what does the Quran say about forgiveness",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.1111111111111111,
+        "mrr": 0.5,
         "top": [
           "40:55",
           "12:98",
@@ -566,8 +566,8 @@
       },
       {
         "query": "what does the Quran say about the poor and needy",
-        "recall@5": 0.5,
-        "mrr": 0.25,
+        "recall@5": 0.375,
+        "mrr": 0.5,
         "top": [
           "30:38",
           "76:8",
@@ -626,8 +626,8 @@
       },
       {
         "query": "what does the Quran say about patience and trust in Allah",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.2,
+        "mrr": 1.0,
         "top": [
           "14:12",
           "11:115",
@@ -641,13 +641,13 @@
   {
     "variant": "mpnet",
     "model": "sentence-transformers/all-mpnet-base-v2",
-    "recall@5": 0.3555555555555555,
-    "mrr": 0.4444444444444444,
-    "time_s": 18.462796799998614,
+    "recall@5": 0.47931216931216925,
+    "mrr": 0.9166666666666666,
+    "time_s": 12.416700999994646,
     "per_query": [
       {
         "query": "patience in hardship",
-        "recall@5": 0.75,
+        "recall@5": 0.5555555555555556,
         "mrr": 1.0,
         "top": [
           "2:45",
@@ -660,7 +660,7 @@
       {
         "query": "what does the Quran say about orphans",
         "recall@5": 0.5,
-        "mrr": 0.25,
+        "mrr": 1.0,
         "top": [
           "2:220",
           "4:127",
@@ -671,8 +671,8 @@
       },
       {
         "query": "charity and giving to the poor",
-        "recall@5": 0.3333333333333333,
-        "mrr": 0.25,
+        "recall@5": 0.5,
+        "mrr": 1.0,
         "top": [
           "41:7",
           "23:4",
@@ -683,7 +683,7 @@
       },
       {
         "query": "the story of Moses and Pharaoh",
-        "recall@5": 1.0,
+        "recall@5": 0.5,
         "mrr": 1.0,
         "top": [
           "28:3",
@@ -707,8 +707,8 @@
       },
       {
         "query": "what does the Quran say about anxiety",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.42857142857142855,
+        "mrr": 0.5,
         "top": [
           "20:113",
           "12:86",
@@ -719,8 +719,8 @@
       },
       {
         "query": "what does the Quran say about depression",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.3,
+        "mrr": 1.0,
         "top": [
           "12:86",
           "6:17",
@@ -731,7 +731,7 @@
       },
       {
         "query": "what does the Quran say about gratitude",
-        "recall@5": 0.5,
+        "recall@5": 0.6666666666666666,
         "mrr": 1.0,
         "top": [
           "31:12",
@@ -743,7 +743,7 @@
       },
       {
         "query": "what does the Quran say about justice",
-        "recall@5": 0.25,
+        "recall@5": 0.3333333333333333,
         "mrr": 1.0,
         "top": [
           "16:90",
@@ -755,8 +755,8 @@
       },
       {
         "query": "what does the Quran say about forgiveness",
-        "recall@5": 0.25,
-        "mrr": 0.3333333333333333,
+        "recall@5": 0.5555555555555556,
+        "mrr": 1.0,
         "top": [
           "45:14",
           "40:42",
@@ -767,8 +767,8 @@
       },
       {
         "query": "what does the Quran say about seeking knowledge",
-        "recall@5": 0.25,
-        "mrr": 0.3333333333333333,
+        "recall@5": 0.5,
+        "mrr": 1.0,
         "top": [
           "2:32",
           "47:24",
@@ -779,8 +779,8 @@
       },
       {
         "query": "what does the Quran say about the poor and needy",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.375,
+        "mrr": 1.0,
         "top": [
           "59:9",
           "10:58",
@@ -791,8 +791,8 @@
       },
       {
         "query": "what does the Quran say about stress and hardship",
-        "recall@5": 0.75,
-        "mrr": 0.5,
+        "recall@5": 0.625,
+        "mrr": 1.0,
         "top": [
           "21:83",
           "94:5",
@@ -803,8 +803,8 @@
       },
       {
         "query": "what does the Quran say about responding to wrongdoing",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.2,
+        "mrr": 0.25,
         "top": [
           "14:42",
           "10:106",
@@ -839,8 +839,8 @@
       },
       {
         "query": "what does the Quran say about patience and trust in Allah",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.4,
+        "mrr": 1.0,
         "top": [
           "14:12",
           "30:60",
@@ -854,14 +854,14 @@
   {
     "variant": "mpnet_rerank",
     "model": "sentence-transformers/all-mpnet-base-v2",
-    "recall@5": 0.27777777777777773,
-    "mrr": 0.4522222222222222,
-    "time_s": 85.29632280000078,
+    "recall@5": 0.2895238095238095,
+    "mrr": 0.9,
+    "time_s": 113.90075400000205,
     "per_query": [
       {
         "query": "patience in hardship",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.2222222222222222,
+        "mrr": 1.0,
         "top": [
           "70:5",
           "12:83",
@@ -873,7 +873,7 @@
       {
         "query": "what does the Quran say about orphans",
         "recall@5": 0.5,
-        "mrr": 0.25,
+        "mrr": 1.0,
         "top": [
           "2:220",
           "4:127",
@@ -884,7 +884,7 @@
       },
       {
         "query": "charity and giving to the poor",
-        "recall@5": 0.6666666666666666,
+        "recall@5": 0.375,
         "mrr": 1.0,
         "top": [
           "2:273",
@@ -896,7 +896,7 @@
       },
       {
         "query": "the story of Moses and Pharaoh",
-        "recall@5": 0.5,
+        "recall@5": 0.3,
         "mrr": 1.0,
         "top": [
           "28:3",
@@ -920,8 +920,8 @@
       },
       {
         "query": "what does the Quran say about anxiety",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.14285714285714285,
+        "mrr": 1.0,
         "top": [
           "12:86",
           "26:177",
@@ -932,8 +932,8 @@
       },
       {
         "query": "what does the Quran say about depression",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.1,
+        "mrr": 0.5,
         "top": [
           "12:95",
           "12:86",
@@ -956,7 +956,7 @@
       },
       {
         "query": "what does the Quran say about justice",
-        "recall@5": 0.25,
+        "recall@5": 0.16666666666666666,
         "mrr": 1.0,
         "top": [
           "16:90",
@@ -968,8 +968,8 @@
       },
       {
         "query": "what does the Quran say about forgiveness",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.1111111111111111,
+        "mrr": 1.0,
         "top": [
           "45:14",
           "28:16",
@@ -981,7 +981,7 @@
       {
         "query": "what does the Quran say about seeking knowledge",
         "recall@5": 0.25,
-        "mrr": 0.2,
+        "mrr": 1.0,
         "top": [
           "28:80",
           "5:109",
@@ -992,7 +992,7 @@
       },
       {
         "query": "what does the Quran say about the poor and needy",
-        "recall@5": 0.5,
+        "recall@5": 0.375,
         "mrr": 1.0,
         "top": [
           "2:273",
@@ -1005,7 +1005,7 @@
       {
         "query": "what does the Quran say about stress and hardship",
         "recall@5": 0.25,
-        "mrr": 0.3333333333333333,
+        "mrr": 1.0,
         "top": [
           "12:86",
           "20:2",
@@ -1052,8 +1052,8 @@
       },
       {
         "query": "what does the Quran say about patience and trust in Allah",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.3,
+        "mrr": 1.0,
         "top": [
           "14:12",
           "11:115",
@@ -1067,13 +1067,13 @@
   {
     "variant": "threshold",
     "model": "sentence-transformers/all-MiniLM-L6-v2",
-    "recall@5": 0.2611111111111111,
-    "mrr": 0.3911111111111111,
-    "time_s": 3.715105199997197,
+    "recall@5": 0.20574074074074075,
+    "mrr": 0.5077777777777778,
+    "time_s": 5.593184000012116,
     "per_query": [
       {
         "query": "patience in hardship",
-        "recall@5": 0.75,
+        "recall@5": 0.3333333333333333,
         "mrr": 0.5,
         "top": [
           "4:104",
@@ -1085,8 +1085,8 @@
       },
       {
         "query": "what does the Quran say about orphans",
-        "recall@5": 0.5,
-        "mrr": 0.5,
+        "recall@5": 0.4,
+        "mrr": 1.0,
         "top": [
           "4:127",
           "4:6",
@@ -1097,7 +1097,7 @@
       },
       {
         "query": "charity and giving to the poor",
-        "recall@5": 0.6666666666666666,
+        "recall@5": 0.375,
         "mrr": 1.0,
         "top": [
           "2:215",
@@ -1109,7 +1109,7 @@
       },
       {
         "query": "the story of Moses and Pharaoh",
-        "recall@5": 0.5,
+        "recall@5": 0.3,
         "mrr": 1.0,
         "top": [
           "28:3",
@@ -1157,7 +1157,7 @@
       },
       {
         "query": "what does the Quran say about gratitude",
-        "recall@5": 0.25,
+        "recall@5": 0.16666666666666666,
         "mrr": 1.0,
         "top": [
           "31:12",
@@ -1181,8 +1181,8 @@
       },
       {
         "query": "what does the Quran say about forgiveness",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.1111111111111111,
+        "mrr": 0.25,
         "top": [
           "40:10",
           "40:55",
@@ -1193,7 +1193,7 @@
       },
       {
         "query": "what does the Quran say about seeking knowledge",
-        "recall@5": 0.25,
+        "recall@5": 0.125,
         "mrr": 0.3333333333333333,
         "top": [
           "22:54",
@@ -1217,7 +1217,7 @@
       },
       {
         "query": "what does the Quran say about stress and hardship",
-        "recall@5": 0.25,
+        "recall@5": 0.125,
         "mrr": 0.2,
         "top": [
           "4:104",
@@ -1265,8 +1265,8 @@
       },
       {
         "query": "what does the Quran say about patience and trust in Allah",
-        "recall@5": 0.0,
-        "mrr": 0.0,
+        "recall@5": 0.4,
+        "mrr": 1.0,
         "top": [
           "14:12",
           "11:115",

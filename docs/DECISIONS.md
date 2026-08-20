@@ -113,6 +113,91 @@ Next steps recommended:
 - Consider `mpnet_rerank` as a follow-up: it improves MRR and rank-1 precision for some queries (e.g., the bees case) and could be used asynchronously or as an optional higher-cost rerank stage.
 - Re-run the benchmark on a larger evaluation set if available to confirm the selection beyond the current 18-query sample.
 
+## Relabelling the evaluation set (2026-08-20)
+
+The original `expected_refs` were written from memory by a non-specialist and
+were badly incomplete. Every query's top 10 was reviewed against the full
+translation text (`docs/eval_review.md`) and the genuinely relevant verses were
+added. Labelled refs went from 57 to 118 across the 15 positive queries. The two
+negative queries were confirmed as correctly having nothing relevant.
+
+Retrieval did not change. The same top 5 was scored against both label sets, so
+everything below is a change in measurement.
+
+| Metric | Old labels | New labels | Change |
+|--------|-----------|------------|--------|
+| recall@5 (as the benchmark defines it) | 0.356 | 0.479 | +0.124 |
+| recall@5 (ceiling-aware) | 0.356 | **0.757** | +0.401 |
+| precision@5 | 0.253 | **0.747** | +0.493 |
+| MRR | 0.444 | **0.917** | +0.472 |
+| relevant verses in the top 5 | 19 / 75 | **56 / 75** | +37 |
+| queries with nothing relevant in the top 5 | 5 | **0** | -5 |
+
+**The headline recall@5 understates this badly, and is now a broken metric.** It
+divides by `len(expected_refs)`, so once a query has more than five relevant
+verses the score cannot reach 1.0 - it is capped at `5/N`. Four queries actually
+scored *lower* after relabelling for that reason alone: "the story of Moses and
+Pharaoh" fell from 1.000 to 0.500 while all five of its top results are now
+known to be relevant, i.e. precision@5 of 1.000. The ceiling-aware variant
+divides by `min(N, 5)` instead, and precision@5 and MRR are unaffected by the
+denominator entirely. Prefer MRR and precision@5 for future comparisons; the
+sweep script still computes only the original definition.
+
+So retrieval was substantially better than the old numbers claimed. MRR of 0.917
+means the top result is relevant for almost every query. The earlier conclusion
+that recall@5 of 0.356 showed weak retrieval was largely a measurement artifact.
+
+### Variant sweep, rescored
+
+| Variant | recall@5 old -> new | MRR old -> new |
+|---------|--------------------|----------------|
+| `dense_default` (MiniLM) | 0.261 -> 0.206 | 0.391 -> 0.508 |
+| `rerank` | 0.294 -> 0.244 | 0.406 -> 0.536 |
+| `hybrid` | 0.167 -> 0.143 | 0.283 -> 0.447 |
+| `mpnet` | 0.356 -> **0.479** | 0.444 -> **0.917** |
+| `mpnet_rerank` | 0.278 -> 0.290 | 0.452 -> 0.900 |
+| `threshold` | 0.261 -> 0.206 | 0.391 -> 0.508 |
+
+`mpnet` remains the choice, by a wider margin than before.
+
+**Caveat on the cross-variant comparison.** The labels were pooled from
+`mpnet`'s top 10 only, because that is the production path and what was
+reviewed. Any verse that only another variant surfaces is still unlabelled and
+still scores as a miss, which biases the comparison in `mpnet`'s favour. The
+absolute `mpnet` figures are sound; the ranking against the other variants is
+not, until candidates are pooled from every variant and the union annotated.
+That is the standard pooling procedure and it was not followed here.
+
+### Failures that relabelling did not explain away
+
+Some queries are genuinely poorly served, and it is worth being precise about
+which:
+
+- **"responding to wrongdoing"**: of ten results only `16:90` is relevant. The
+  canonical verses on repaying wrong with good - `41:34`, `16:126`, `4:148` - do
+  not appear at all. Real retrieval failure.
+- **Justice**: `4:135` ("stand out firmly for justice") ranks **93rd** and
+  `4:58` ("when ye judge between man and man, judge with justice") ranks
+  **1518th**. This was originally reported as a labelling gap; it is not. The
+  retriever does not surface either verse.
+- **"anxiety"**: the model conflates anxiety with *taqwa*, the fear of Allah.
+  Four of the ten results (`20:3`, `26:142`, `26:177`, `6:51`) are about
+  God-fearing piety, a different concept entirely. This is what happens when a
+  modern psychological vocabulary is matched against a 1930s translation:
+  "anxiety" and "fear" collapse together in the embedding space although the
+  1934 English uses "fear" almost exclusively in the religious sense. No
+  reranking fixes a vocabulary mismatch of that kind; it needs either query
+  expansion or a translation in contemporary English.
+
+### Future work, not built
+
+- **Near-duplicate suppression.** The gratitude query spends four of its ten
+  slots on `26:127`, `26:145`, `26:164` and `26:180`, which are the same
+  sentence repeated in different surahs. Collapsing near-identical translations
+  to one representative would free up 40% of that result list. Worth doing;
+  deliberately not done now.
+- Pooled multi-variant labelling, per the caveat above.
+
 ## Voice input and read-aloud (2026-08-20)
 
 Added to the assistant tab only: a microphone that dictates into the question
