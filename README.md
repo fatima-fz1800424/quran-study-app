@@ -23,7 +23,7 @@ the Android SDK is not installed in the development environment.
 | Voice dictation and read-aloud (assistant tab, Chrome) | Working |
 | Audio recitation, verse by verse, with highlight and auto-scroll | Working |
 | Reciter selection (9 Quran.com reciters) | Working |
-| **Full-surah playback mode (mp3quran reciters)** | **Not built** |
+| Full-surah playback mode (288 mp3quran recitations) | Working |
 | **Download-for-offline audio** | **Not built** - see limitations |
 | **Juz / Hizb browsing, go-to-ayah jump** | **Not built** |
 | **Firebase bookmark sync** | **Not built** |
@@ -90,7 +90,7 @@ backend proxy.
 ### Tests
 
 ```bash
-flutter test          # 46 tests
+flutter test          # 55 tests
 cd backend && python -m pytest   # 70 tests
 ```
 

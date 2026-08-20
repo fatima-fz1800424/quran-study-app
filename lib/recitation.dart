@@ -332,6 +332,256 @@ final reciterProvider = StateNotifierProvider<ReciterNotifier, Reciter?>(
   (ref) => ReciterNotifier(),
 );
 
+// ---------------------------------------------------------------------------
+// Full-surah recitation
+// ---------------------------------------------------------------------------
+
+/// mp3quran.net publishes whole-surah audio for far more reciters than any
+/// ayah-level source, which is the whole reason this second mode exists. Their
+/// terms grant use explicitly - see docs/DECISIONS.md for the quoted text and
+/// for the limits of that grant.
+const String kFullSurahRecitersEndpoint =
+    'https://www.mp3quran.net/api/v3/reciters?language=eng';
+
+/// Whole-surah audio is only streamed from mp3quran's own servers.
+///
+/// Same reasoning as [kAllowedAudioHosts]: the permission we are relying on is
+/// theirs, so a URL that points anywhere else is not covered by it. They serve
+/// from numbered hosts (server6, server16, ...), so this matches the domain
+/// rather than an enumerated list.
+bool isAllowedFullSurahUrl(String url) {
+  final host = Uri.tryParse(url)?.host ?? '';
+  return host == 'mp3quran.net' || host.endsWith('.mp3quran.net');
+}
+
+/// One reciter's whole-surah set. A reciter may publish several, so this is a
+/// recitation rather than a reciter.
+class SurahRecitation {
+  const SurahRecitation({
+    required this.reciterId,
+    required this.reciterName,
+    required this.moshafName,
+    required this.server,
+    required this.availableSurahs,
+  });
+
+  final int reciterId;
+  final String reciterName;
+  final String moshafName;
+  final String server;
+
+  /// Which surahs this set actually contains. Many are incomplete, so this is
+  /// checked before offering playback rather than after failing to fetch.
+  final Set<int> availableSurahs;
+
+  /// Stable identity for persistence: a reciter can have more than one set.
+  String get key => '$reciterId|$moshafName';
+
+  String get label =>
+      availableSurahs.length == 114 ? reciterName : '$reciterName (partial)';
+
+  bool hasSurah(int surah) => availableSurahs.contains(surah);
+
+  String urlFor(int surah) =>
+      '$server${surah.toString().padLeft(3, '0')}.mp3';
+}
+
+/// Parse the mp3quran reciters payload into whole-surah recitations.
+///
+/// Kept pure so the shape of their API is pinned by tests: entries whose server
+/// is off-domain, or which list no surahs, are dropped rather than offered.
+List<SurahRecitation> parseFullSurahRecitations(Map<String, dynamic> body) {
+  final out = <SurahRecitation>[];
+  for (final entry in (body['reciters'] as List<dynamic>? ?? const [])) {
+    final reciter = entry as Map<String, dynamic>;
+    final id = reciter['id'];
+    final name = reciter['name'];
+    if (id is! int || name is! String || name.trim().isEmpty) {
+      continue;
+    }
+    for (final rawMoshaf in (reciter['moshaf'] as List<dynamic>? ?? const [])) {
+      final moshaf = rawMoshaf as Map<String, dynamic>;
+      final server = (moshaf['server'] as String?)?.trim() ?? '';
+      if (server.isEmpty || !isAllowedFullSurahUrl(server)) {
+        continue;
+      }
+      final surahs = <int>{};
+      for (final part in (moshaf['surah_list'] as String? ?? '').split(',')) {
+        final parsed = int.tryParse(part.trim());
+        if (parsed != null && parsed >= 1 && parsed <= 114) {
+          surahs.add(parsed);
+        }
+      }
+      if (surahs.isEmpty) {
+        continue;
+      }
+      out.add(
+        SurahRecitation(
+          reciterId: id,
+          reciterName: name.trim(),
+          moshafName: (moshaf['name'] as String?)?.trim() ?? '',
+          // Their servers are inconsistent about the trailing slash.
+          server: server.endsWith('/') ? server : '$server/',
+          availableSurahs: surahs,
+        ),
+      );
+    }
+  }
+  out.sort((a, b) => a.reciterName.compareTo(b.reciterName));
+  return out;
+}
+
+/// Seam for whole-surah playback.
+abstract class FullSurahService {
+  Future<List<SurahRecitation>> loadRecitations();
+
+  Future<void> play(String url, {required void Function() onDone});
+
+  Future<void> pause();
+
+  Future<void> resume();
+
+  Future<void> stop();
+
+  bool get isPlaying;
+}
+
+class PlatformFullSurahService implements FullSurahService {
+  PlatformFullSurahService({http.Client? client, AudioPlayer? player})
+      : _client = client ?? http.Client(),
+        _player = player ?? AudioPlayer();
+
+  final http.Client _client;
+  final AudioPlayer _player;
+  List<SurahRecitation>? _cached;
+
+  @override
+  bool get isPlaying => _player.playing;
+
+  @override
+  Future<List<SurahRecitation>> loadRecitations() async {
+    final cached = _cached;
+    if (cached != null) {
+      return cached;
+    }
+    final response = await _client.get(Uri.parse(kFullSurahRecitersEndpoint));
+    if (response.statusCode != 200) {
+      throw StateError('Could not load reciters: HTTP ${response.statusCode}');
+    }
+    final parsed = parseFullSurahRecitations(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    _cached = parsed;
+    return parsed;
+  }
+
+  @override
+  Future<void> play(String url, {required void Function() onDone}) async {
+    if (!isAllowedFullSurahUrl(url)) {
+      throw StateError('Refusing to stream from an unexpected host: $url');
+    }
+    await _player.stop();
+    await _player.setUrl(url);
+    _player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        onDone();
+      }
+    });
+    await _player.play();
+  }
+
+  @override
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> resume() => _player.play();
+
+  @override
+  Future<void> stop() => _player.stop();
+
+  Future<void> dispose() => _player.dispose();
+}
+
+final fullSurahServiceProvider = Provider<FullSurahService>(
+  (ref) => PlatformFullSurahService(),
+);
+
+final fullSurahRecitationsProvider =
+    FutureProvider<List<SurahRecitation>>((ref) async {
+  final list = await ref.watch(fullSurahServiceProvider).loadRecitations();
+  await ref.read(surahRecitationProvider.notifier).restore(list);
+  return list;
+});
+
+/// The chosen whole-surah recitation, remembered across sessions.
+class SurahRecitationNotifier extends StateNotifier<SurahRecitation?> {
+  SurahRecitationNotifier() : super(null);
+
+  static const String _key = 'full_surah_recitation';
+
+  Future<void> restore(List<SurahRecitation> available) async {
+    if (available.isEmpty) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final storedKey = prefs.getString(_key);
+    state = available.firstWhere(
+      (item) => item.key == storedKey,
+      // Prefer a complete recitation as the default; a partial one would look
+      // broken on whichever surahs it lacks.
+      orElse: () => available.firstWhere(
+        (item) => item.availableSurahs.length == 114,
+        orElse: () => available.first,
+      ),
+    );
+  }
+
+  Future<void> select(SurahRecitation recitation) async {
+    state = recitation;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, recitation.key);
+  }
+}
+
+final surahRecitationProvider =
+    StateNotifierProvider<SurahRecitationNotifier, SurahRecitation?>(
+  (ref) => SurahRecitationNotifier(),
+);
+
+/// How the reader plays audio.
+///
+/// Two modes because the sources differ, not as a preference: verse-level
+/// playback needs one file per ayah, which only a few reciters publish, while
+/// whole-surah files are available for hundreds but carry no ayah boundaries to
+/// highlight or scroll to.
+enum RecitationMode { verseByVerse, fullSurah }
+
+class RecitationModeNotifier extends StateNotifier<RecitationMode> {
+  RecitationModeNotifier() : super(RecitationMode.verseByVerse) {
+    _restore();
+  }
+
+  static const String _key = 'recitation_mode';
+
+  Future<void> _restore() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_key) == 'fullSurah') {
+      state = RecitationMode.fullSurah;
+    }
+  }
+
+  Future<void> select(RecitationMode mode) async {
+    state = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, mode.name);
+  }
+}
+
+final recitationModeProvider =
+    StateNotifierProvider<RecitationModeNotifier, RecitationMode>(
+  (ref) => RecitationModeNotifier(),
+);
+
 /// A fake for tests: records calls and lets the test drive verse progression.
 @visibleForTesting
 class FakeRecitationService implements RecitationService {
@@ -386,6 +636,73 @@ class FakeRecitationService implements RecitationService {
   void advanceTo(int verse) => _onVerse?.call(verse);
 
   /// Simulate the queue finishing.
+  void finish() {
+    playing = false;
+    _onDone?.call();
+  }
+
+  @override
+  Future<void> pause() async {
+    pauseCalls++;
+    playing = false;
+  }
+
+  @override
+  Future<void> resume() async {
+    playing = true;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+    playing = false;
+  }
+}
+
+/// A fake whole-surah service for tests.
+@visibleForTesting
+class FakeFullSurahService implements FullSurahService {
+  FakeFullSurahService({List<SurahRecitation>? recitations})
+      : recitations = recitations ??
+            const [
+              SurahRecitation(
+                reciterId: 273,
+                reciterName: 'Haitham Aldukhain',
+                moshafName: "Rewayat Hafs A'n Assem",
+                server: 'https://server16.mp3quran.net/h_dukhain/x/',
+                availableSurahs: {1, 2, 36, 112, 114},
+              ),
+              SurahRecitation(
+                reciterId: 99,
+                reciterName: 'Partial Reciter',
+                moshafName: 'Partial',
+                server: 'https://server9.mp3quran.net/partial/',
+                availableSurahs: {1},
+              ),
+            ];
+
+  final List<SurahRecitation> recitations;
+
+  final List<String> played = [];
+  bool playing = false;
+  int stopCalls = 0;
+  int pauseCalls = 0;
+  void Function()? _onDone;
+
+  @override
+  bool get isPlaying => playing;
+
+  @override
+  Future<List<SurahRecitation>> loadRecitations() async => recitations;
+
+  @override
+  Future<void> play(String url, {required void Function() onDone}) async {
+    played.add(url);
+    playing = true;
+    _onDone = onDone;
+  }
+
+  /// Simulate the surah finishing.
   void finish() {
     playing = false;
     _onDone?.call();

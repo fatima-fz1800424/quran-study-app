@@ -913,6 +913,225 @@ void main() {
     });
   });
 
+  group('full surah recitations', () {
+    // The real payload shape, trimmed.
+    Map<String, dynamic> payload() => {
+          'reciters': [
+            {
+              'id': 273,
+              'name': 'Haitham Aldukhain',
+              'moshaf': [
+                {
+                  'id': 273,
+                  'name': "Rewayat Hafs A'n Assem - Featured Recitation",
+                  'server':
+                      'https://server16.mp3quran.net/h_dukhain/Rewayat-Hafs-A-n-Assem/',
+                  'surah_total': 114,
+                  'surah_list': [for (var i = 1; i <= 114; i++) i].join(','),
+                },
+              ],
+            },
+            {
+              'id': 50,
+              'name': 'Partial Reciter',
+              'moshaf': [
+                {
+                  'id': 50,
+                  'name': 'Partial set',
+                  // No trailing slash, which their API is inconsistent about.
+                  'server': 'https://server9.mp3quran.net/partial',
+                  'surah_total': 3,
+                  'surah_list': '1,2,114',
+                },
+              ],
+            },
+            {
+              'id': 60,
+              'name': 'Off Domain',
+              'moshaf': [
+                {
+                  'id': 60,
+                  'name': 'Elsewhere',
+                  'server': 'https://cdn.example.com/audio/',
+                  'surah_total': 114,
+                  'surah_list': '1,2,3',
+                },
+              ],
+            },
+            {
+              'id': 70,
+              'name': 'No Surahs',
+              'moshaf': [
+                {
+                  'id': 70,
+                  'name': 'Empty',
+                  'server': 'https://server9.mp3quran.net/empty/',
+                  'surah_total': 0,
+                  'surah_list': '',
+                },
+              ],
+            },
+          ],
+        };
+
+    test('parses recitations and drops the ones it cannot use', () {
+      final parsed = parseFullSurahRecitations(payload());
+
+      // Off-domain and empty sets are dropped rather than offered.
+      expect(parsed.map((r) => r.reciterId), [273, 50]);
+      expect(parsed.any((r) => r.reciterName == 'Off Domain'), isFalse);
+      expect(parsed.any((r) => r.reciterName == 'No Surahs'), isFalse);
+    });
+
+    test('normalises a server missing its trailing slash', () {
+      final partial =
+          parseFullSurahRecitations(payload()).firstWhere((r) => r.reciterId == 50);
+      expect(partial.server, endsWith('/'));
+      expect(partial.urlFor(1), 'https://server9.mp3quran.net/partial/001.mp3');
+    });
+
+    test('builds zero-padded whole-surah urls', () {
+      final dukhain =
+          parseFullSurahRecitations(payload()).firstWhere((r) => r.reciterId == 273);
+      expect(
+        dukhain.urlFor(1),
+        'https://server16.mp3quran.net/h_dukhain/Rewayat-Hafs-A-n-Assem/001.mp3',
+      );
+      expect(dukhain.urlFor(114), endsWith('114.mp3'));
+      expect(dukhain.urlFor(36), endsWith('036.mp3'));
+    });
+
+    test('knows which surahs a partial set actually has', () {
+      final parsed = parseFullSurahRecitations(payload());
+      final partial = parsed.firstWhere((r) => r.reciterId == 50);
+      final complete = parsed.firstWhere((r) => r.reciterId == 273);
+
+      expect(partial.hasSurah(2), isTrue);
+      expect(partial.hasSurah(36), isFalse);
+      expect(partial.label, contains('partial'));
+      expect(complete.hasSurah(36), isTrue);
+      expect(complete.label, isNot(contains('partial')));
+    });
+
+    test('only mp3quran hosts are allowed', () {
+      expect(
+        isAllowedFullSurahUrl('https://server16.mp3quran.net/x/001.mp3'),
+        isTrue,
+      );
+      expect(isAllowedFullSurahUrl('https://mp3quran.net/x/001.mp3'), isTrue);
+      // Not a subdomain of mp3quran.net despite containing the name.
+      expect(
+        isAllowedFullSurahUrl('https://mp3quran.net.evil.com/x/001.mp3'),
+        isFalse,
+      );
+      expect(isAllowedFullSurahUrl('https://everyayah.com/x/001.mp3'), isFalse);
+    });
+  });
+
+  group('full surah playback', () {
+    Future<FakeFullSurahService> openReader(
+      WidgetTester tester, {
+      int surahNumber = 2,
+      FakeFullSurahService? service,
+    }) async {
+      SharedPreferences.setMockInitialValues({
+        'recitation_mode': 'fullSurah',
+      });
+      QuranDataLoader.seedCorpusForTests(_fakeCorpus(verses: 8));
+      final audio = service ?? FakeFullSurahService();
+      final container = ProviderContainer(
+        overrides: [fullSurahServiceProvider.overrideWithValue(audio)],
+      );
+      addTearDown(container.dispose);
+
+      final surahs = await QuranDataLoader.loadSurahs();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: ReaderPage(
+              surah: surahs.firstWhere((s) => s.number == surahNumber),
+            ),
+          ),
+        ),
+      );
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      return audio;
+    }
+
+    testWidgets('full surah mode replaces per-ayah controls with one', (
+      tester,
+    ) async {
+      await openReader(tester);
+
+      // Nothing to play per ayah in this mode: the files have no ayah bounds.
+      expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
+      expect(find.byTooltip('Play the whole surah'), findsOneWidget);
+      expect(find.byTooltip('Recite from this verse'), findsNothing);
+    });
+
+    testWidgets('playing requests the whole-surah file once', (tester) async {
+      final audio = await openReader(tester);
+
+      await tester.tap(find.byTooltip('Play the whole surah'));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(audio.played, hasLength(1));
+      expect(audio.played.single, endsWith('002.mp3'));
+      expect(audio.playing, isTrue);
+      expect(find.byTooltip('Pause recitation'), findsOneWidget);
+    });
+
+    testWidgets('a reciter without this surah is refused before playing', (
+      tester,
+    ) async {
+      // An explicitly incomplete set, so the assertion does not depend on
+      // whatever the fake happens to default to.
+      final audio = await openReader(
+        tester,
+        surahNumber: 36,
+        service: FakeFullSurahService(
+          recitations: const [
+            SurahRecitation(
+              reciterId: 273,
+              reciterName: 'Haitham Aldukhain',
+              moshafName: 'Incomplete',
+              server: 'https://server16.mp3quran.net/h_dukhain/x/',
+              availableSurahs: {1, 2, 114},
+            ),
+          ],
+        ),
+      );
+
+      await tester.tap(find.byTooltip('Play the whole surah'));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(audio.played, isEmpty);
+      expect(find.textContaining('does not have'), findsOneWidget);
+    });
+
+    testWidgets('finishing clears the playing state', (tester) async {
+      final audio = await openReader(tester);
+
+      await tester.tap(find.byTooltip('Play the whole surah'));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(find.byTooltip('Pause recitation'), findsOneWidget);
+
+      audio.finish();
+      await tester.pump();
+
+      expect(find.byTooltip('Play the whole surah'), findsOneWidget);
+    });
+  });
+
   group('assistant reference chips', () {
     /// Drive the assistant with scripted backend replies.
     Future<void> ask(

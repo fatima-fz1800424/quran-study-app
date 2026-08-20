@@ -635,6 +635,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   int? _observedVerse;
   late final LastReadNotifier _lastRead;
   late final RecitationService _recitation;
+  late final FullSurahService _fullSurah;
+
+  /// True while the whole-surah player is running. Distinct from
+  /// [_playingVerse]: this mode has no verse to track.
+  bool _fullSurahPlaying = false;
 
   static const Duration _highlightHold = Duration(milliseconds: 1600);
 
@@ -644,6 +649,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     // Captured here so they stay usable during teardown, when `ref` is not.
     _lastRead = ref.read(lastReadProvider.notifier);
     _recitation = ref.read(recitationServiceProvider);
+    _fullSurah = ref.read(fullSurahServiceProvider);
     _pendingScrollToAyah = widget.initialAyah;
     if (widget.highlightInitialAyah) {
       _highlightedAyah = widget.initialAyah;
@@ -672,6 +678,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     // Leaving the reader must not leave audio playing behind it. Uses the
     // captured service: `ref` is already dead by dispose.
     _recitation.stop();
+    _fullSurah.stop();
     _highlightTimer?.cancel();
     _scrollSettleTimer?.cancel();
     _scrollController.removeListener(_handleScroll);
@@ -866,6 +873,83 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     }
   }
 
+  /// Start, pause or resume whole-surah playback.
+  ///
+  /// No verse tracking here on purpose: mp3quran publishes one file per surah
+  /// with no ayah boundaries, so there is nothing to highlight or scroll to.
+  /// Pretending otherwise would be a worse experience than not offering it.
+  Future<void> _toggleFullSurah() async {
+    if (_fullSurahPlaying) {
+      await _fullSurah.pause();
+      if (mounted) {
+        setState(() => _fullSurahPlaying = false);
+      }
+      return;
+    }
+
+    setState(() {
+      _audioBusy = true;
+      _audioError = null;
+    });
+
+    try {
+      var recitation = ref.read(surahRecitationProvider);
+      if (recitation == null) {
+        try {
+          await ref.read(fullSurahRecitationsProvider.future);
+        } catch (_) {
+          // Handled by the null check below.
+        }
+        if (!mounted) {
+          return;
+        }
+        recitation = ref.read(surahRecitationProvider);
+      }
+
+      final selected = recitation;
+      if (selected == null) {
+        setState(() => _audioError =
+            'No reciter available. Recitation needs a connection.');
+        return;
+      }
+      // Many sets are incomplete, so this is checked before playing rather
+      // than surfaced as a failed request.
+      if (!selected.hasSurah(widget.surah.number)) {
+        setState(() => _audioError =
+            '${selected.reciterName} does not have '
+            '${widget.surah.nameSimple}. Try another reciter.');
+        return;
+      }
+
+      // Only one player at a time.
+      await _recitation.stop();
+      if (mounted) {
+        setState(() => _playingVerse = null);
+      }
+
+      await _fullSurah.play(
+        selected.urlFor(widget.surah.number),
+        onDone: () {
+          if (mounted) {
+            setState(() => _fullSurahPlaying = false);
+          }
+        },
+      );
+      if (mounted) {
+        setState(() => _fullSurahPlaying = true);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _audioError =
+            'Recitation could not be played. Check your connection.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _audioBusy = false);
+      }
+    }
+  }
+
   /// Bring [verse] into view, used to follow the recitation.
   void _scrollToVerse(int verse) {
     final index = _indexToVerse.entries
@@ -997,6 +1081,56 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       children: [
                         Consumer(
                           builder: (context, ref, child) {
+                            final mode = ref.watch(recitationModeProvider);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SegmentedButton<RecitationMode>(
+                                  segments: const [
+                                    ButtonSegment(
+                                      value: RecitationMode.verseByVerse,
+                                      label: Text('Verse by verse'),
+                                    ),
+                                    ButtonSegment(
+                                      value: RecitationMode.fullSurah,
+                                      label: Text('Full surah'),
+                                    ),
+                                  ],
+                                  selected: {mode},
+                                  onSelectionChanged: (selection) {
+                                    ref
+                                        .read(recitationModeProvider.notifier)
+                                        .select(selection.first);
+                                  },
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  mode == RecitationMode.verseByVerse
+                                      ? 'Plays one ayah at a time, highlighting '
+                                          'and scrolling as it goes. Nine reciters.'
+                                      : 'Plays the surah as one recording. Many '
+                                          'more reciters, but no verse tracking - '
+                                          'these files have no ayah boundaries.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        fontSize: 12,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, child) {
+                            if (ref.watch(recitationModeProvider) ==
+                                RecitationMode.fullSurah) {
+                              return const _FullSurahReciterPicker();
+                            }
                             final selected = ref.watch(reciterProvider);
                             final available = ref.watch(recitersProvider);
                             return available.when(
@@ -1108,10 +1242,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
     final theme = Theme.of(context);
+    final mode = ref.watch(recitationModeProvider);
     // Watched here, not only in the settings sheet: the provider is lazy, and
     // loading it is what restores the stored reciter and picks a default. Until
     // this ran, the first tap on play could only fail.
-    ref.watch(recitersProvider);
+    if (mode == RecitationMode.verseByVerse) {
+      ref.watch(recitersProvider);
+    } else {
+      ref.watch(fullSurahRecitationsProvider);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -1140,6 +1279,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           ],
         ),
         actions: [
+          if (mode == RecitationMode.fullSurah)
+            IconButton(
+              icon: Icon(
+                _fullSurahPlaying
+                    ? Icons.pause_circle_outline
+                    : Icons.play_circle_outline,
+              ),
+              tooltip: _fullSurahPlaying
+                  ? 'Pause recitation'
+                  : 'Play the whole surah',
+              onPressed: _audioBusy ? null : _toggleFullSurah,
+            ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
@@ -1266,7 +1417,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                               ),
                             ),
                             const Spacer(),
-                            IconButton(
+                            if (mode == RecitationMode.verseByVerse)
+                              IconButton(
                               tooltip: isReciting
                                   ? 'Stop reciting'
                                   : 'Recite from this verse',
@@ -2092,6 +2244,59 @@ class _SettingsSection extends StatelessWidget {
           const SizedBox(height: 8),
           ...children,
         ],
+      ),
+    );
+  }
+}
+
+/// Reciter picker for whole-surah mode.
+///
+/// Separate from the verse-by-verse picker because the lists come from
+/// different providers with different completeness: mp3quran publishes hundreds
+/// of recitations, many of them partial, so incomplete sets are labelled rather
+/// than silently failing on the surahs they lack.
+class _FullSurahReciterPicker extends ConsumerWidget {
+  const _FullSurahReciterPicker();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(surahRecitationProvider);
+    final available = ref.watch(fullSurahRecitationsProvider);
+
+    return available.when(
+      loading: () => const ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text('Loading reciters...'),
+      ),
+      error: (error, _) => const ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text('Reciters unavailable'),
+        subtitle: Text('Recitation needs a connection. Reading does not.'),
+      ),
+      data: (recitations) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text('Reciter (${recitations.length} available)'),
+        subtitle: Text(selected?.label ?? 'Choose a reciter'),
+        trailing: SizedBox(
+          width: 190,
+          child: DropdownButton<SurahRecitation>(
+            value: selected,
+            isExpanded: true,
+            underline: const SizedBox.shrink(),
+            items: [
+              for (final recitation in recitations)
+                DropdownMenuItem(
+                  value: recitation,
+                  child: Text(recitation.label, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (recitation) {
+              if (recitation != null) {
+                ref.read(surahRecitationProvider.notifier).select(recitation);
+              }
+            },
+          ),
+        ),
       ),
     );
   }
