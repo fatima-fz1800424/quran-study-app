@@ -783,6 +783,45 @@ void main() {
       return audio;
     }
 
+    testWidgets('the first tap works without visiting settings first', (
+      tester,
+    ) async {
+      // No restore() call here on purpose: this is a cold first run, which is
+      // the case that used to fail with "No reciter selected yet" because the
+      // reciter list is lazy and was only watched inside the settings sheet.
+      SharedPreferences.setMockInitialValues({});
+      QuranDataLoader.seedCorpusForTests(_fakeCorpus(verses: 20));
+      final audio = FakeRecitationService();
+      final container = ProviderContainer(
+        overrides: [recitationServiceProvider.overrideWithValue(audio)],
+      );
+      addTearDown(container.dispose);
+
+      final surahs = await QuranDataLoader.loadSurahs();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: ReaderPage(surah: surahs.firstWhere((s) => s.number == 2)),
+          ),
+        ),
+      );
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      // A default reciter was chosen without any interaction.
+      expect(container.read(reciterProvider), isNotNull);
+
+      await tester.tap(find.byIcon(Icons.play_circle_outline).first);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(audio.playing, isTrue);
+      expect(find.textContaining('No reciter'), findsNothing);
+    });
+
     testWidgets('tapping play queues the whole surah from that verse', (
       tester,
     ) async {

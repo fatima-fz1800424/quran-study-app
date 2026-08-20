@@ -801,18 +801,35 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     });
 
     try {
-      final reciter = ref.read(reciterProvider);
+      var reciter = ref.read(reciterProvider);
       if (reciter == null) {
-        setState(() => _audioError = 'No reciter selected yet.');
+        // Cold start: wait for the list rather than refusing the tap.
+        try {
+          await ref.read(recitersProvider.future);
+        } catch (_) {
+          // Handled by the null check below.
+        }
+        if (!mounted) {
+          return;
+        }
+        reciter = ref.read(reciterProvider);
+      }
+      // Promoted to a final local so it stays non-null through the closures
+      // below.
+      final selected = reciter;
+      if (selected == null) {
+        setState(() => _audioError =
+            'No reciter available. Recitation needs a connection.');
         return;
       }
-      final source = await service.resolveSource(reciter);
+      final source = await service.resolveSource(selected);
       if (!mounted) {
         return;
       }
       if (source == null) {
         setState(() => _audioError =
-            'Could not find audio for ${reciter.label}. Try another reciter.');
+            'Could not find audio for ${selected.label}. '
+            'Try another reciter.');
         return;
       }
 
@@ -1091,6 +1108,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
     final theme = Theme.of(context);
+    // Watched here, not only in the settings sheet: the provider is lazy, and
+    // loading it is what restores the stored reciter and picks a default. Until
+    // this ran, the first tap on play could only fail.
+    ref.watch(recitersProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -1168,7 +1189,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
               if (!mounted) return;
               final messenger = ScaffoldMessenger.maybeOf(context);
               messenger?.hideCurrentSnackBar();
-              messenger?.showSnackBar(SnackBar(content: Text(audioError)));
+              messenger?.showSnackBar(
+                SnackBar(
+                  content: Text(audioError),
+                  action: SnackBarAction(
+                    label: 'Choose reciter',
+                    onPressed: _showSettingsSheet,
+                  ),
+                ),
+              );
               setState(() => _audioError = null);
             });
           }

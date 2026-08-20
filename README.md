@@ -90,7 +90,7 @@ backend proxy.
 ### Tests
 
 ```bash
-flutter test          # 45 tests
+flutter test          # 46 tests
 cd backend && python -m pytest   # 70 tests
 ```
 
