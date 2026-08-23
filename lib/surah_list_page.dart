@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,12 +8,67 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
+import 'about_page.dart';
+import 'decoration.dart';
 import 'main.dart';
+import 'motion.dart';
 import 'recitation.dart';
 import 'voice.dart';
 
-const String kQuranBackendBaseUrl = 'http://127.0.0.1:8123';
+/// Where the study assistant's backend lives.
+///
+/// Supplied at compile time, because a web release build has no runtime
+/// environment to read and no server-side config to fetch - the output is
+/// static files. `String.fromEnvironment` is const-evaluated by the compiler,
+/// so the value is fixed when the bundle is built:
+///
+///     flutter build web --dart-define=QURAN_BACKEND_BASE_URL=https://api.example.com
+///
+/// The default keeps `flutter run -d chrome` working with a backend started
+/// from backend/README.md, which is the same port uvicorn falls back to.
+/// No trailing slash: callers append paths beginning with one.
+const String kQuranBackendBaseUrl = String.fromEnvironment(
+  'QURAN_BACKEND_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8123',
+);
+
+const List<Map<String, String>> _verseOfDayPool = [
+  {
+    'surah': '2',
+    'ayah': '155',
+    'text':
+        'And give good tidings to the patient, who, when disaster strikes them, say, "Indeed we belong to Allah, and indeed to Him we will return."',
+    'reference': 'Al-Baqarah 2:155-156',
+  },
+  {
+    'surah': '94',
+    'ayah': '5',
+    'text': 'Indeed, with hardship comes ease.',
+    'reference': 'Ash-Sharh 94:5-6',
+  },
+  {
+    'surah': '13',
+    'ayah': '28',
+    'text': 'Verily, in the remembrance of Allah do hearts find rest.',
+    'reference': "Ar-Ra'd 13:28",
+  },
+  {
+    'surah': '39',
+    'ayah': '53',
+    'text':
+        'Say, "O My servants who have transgressed against themselves, do not despair of the mercy of Allah. Indeed, Allah forgives all sins."',
+    'reference': 'Az-Zumar 39:53',
+  },
+  {
+    'surah': '2',
+    'ayah': '286',
+    'text': 'Allah does not burden a soul beyond what it can bear.',
+    'reference': 'Al-Baqarah 2:286',
+  },
+];
+
 
 class SurahSummary {
   const SurahSummary({
@@ -22,6 +78,7 @@ class SurahSummary {
     required this.nameTransliterated,
     required this.revelationPlace,
     required this.verseCount,
+    this.bismillah,
   });
 
   final int number;
@@ -34,6 +91,11 @@ class SurahSummary {
 
   final String revelationPlace;
   final int verseCount;
+
+  /// The surah's opening Bismillah, exactly as the corpus stores it, or null
+  /// for al-Fatihah where it is verse 1 and at-Tawbah which has none. Rendered
+  /// from the verified corpus, never typed out.
+  final String? bismillah;
 }
 
 /// Fold text into a form the surah search can compare.
@@ -44,9 +106,7 @@ class SurahSummary {
 /// match fails on all three. Both the query and the candidate go through this,
 /// so the comparison stays symmetric.
 String normaliseForSearch(String value) {
-  final stripped = value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9؀-ۿ]'), '');
+  final stripped = value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9؀-ۿ]'), '');
   final buffer = StringBuffer();
   for (var i = 0; i < stripped.length; i++) {
     if (i == 0 || stripped[i] != stripped[i - 1]) {
@@ -121,7 +181,9 @@ class QuranDataLoader {
     if (cached != null) {
       return cached;
     }
-    final jsonString = await rootBundle.loadString('assets/quran_reader_data.json');
+    final jsonString = await rootBundle.loadString(
+      'assets/quran_reader_data.json',
+    );
     final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
     _decoded = decoded;
     return decoded;
@@ -142,10 +204,10 @@ class QuranDataLoader {
             number: surah['number'] as int,
             nameArabic: surah['name_arabic'] as String,
             nameSimple: surah['name_simple'] as String,
-            nameTransliterated:
-                surah['name_transliterated'] as String? ?? '',
+            nameTransliterated: surah['name_transliterated'] as String? ?? '',
             revelationPlace: surah['revelation_place'] as String,
             verseCount: surah['verse_count'] as int,
+            bismillah: surah['bismillah'] as String?,
           ),
         )
         .toList();
@@ -233,7 +295,10 @@ ReaderTarget? parseReference(String reference) {
   if (surahNumber == null || ayahNumber == null) {
     return null;
   }
-  if (surahNumber < 1 || surahNumber > 114 || ayahNumber < 1 || ayahNumber > 286) {
+  if (surahNumber < 1 ||
+      surahNumber > 114 ||
+      ayahNumber < 1 ||
+      ayahNumber > 286) {
     return null;
   }
   return ReaderTarget(surahNumber: surahNumber, ayahNumber: ayahNumber);
@@ -273,13 +338,27 @@ class LastReadNotifier extends StateNotifier<LastReadState?> {
 
   Future<void> _load() async {
     final stored = await QuranDataLoader.loadLastRead();
-    if (_recordedThisSession) {
+    if (_recordedThisSession || !mounted) {
       return;
     }
     state = stored;
   }
 
+  /// Record a position, whether or not this notifier is still alive.
+  ///
+  /// The reader flushes its last position from `deactivate`, off a microtask,
+  /// so this can land after the provider has been disposed - on app teardown
+  /// it always does. Touching `state` then throws, and because the throw is
+  /// asynchronous it surfaces against whatever runs next rather than here,
+  /// which is what made the test suite order-dependent. The write still has to
+  /// happen: flushing the final position is the entire point of that call, and
+  /// it is the stored value, not the in-memory one, that resume reads.
   Future<void> save(int surahNumber, int ayahNumber) async {
+    if (!mounted) {
+      await QuranDataLoader.saveLastRead(surahNumber, ayahNumber);
+      return;
+    }
+
     final current = state;
     if (current != null &&
         current.surahNumber == surahNumber &&
@@ -295,8 +374,8 @@ class LastReadNotifier extends StateNotifier<LastReadState?> {
 
 final lastReadProvider =
     StateNotifierProvider<LastReadNotifier, LastReadState?>(
-  (ref) => LastReadNotifier(),
-);
+      (ref) => LastReadNotifier(),
+    );
 
 class MainShell extends ConsumerWidget {
   const MainShell({super.key});
@@ -305,23 +384,35 @@ class MainShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedIndex = ref.watch(selectedTabProvider);
 
-    final pages = <Widget>[
-      const SurahListPage(),
-      const AssistantPage(),
-    ];
+    final pages = <Widget>[const SurahListPage(), const AssistantPage()];
 
     return Scaffold(
-      body: IndexedStack(
-        index: selectedIndex,
-        children: pages,
-      ),
+      // A plain IndexedStack, and deliberately so. Wrapping it in an
+      // AnimatedSwitcher keyed on the index cost three things and bought a
+      // 240ms crossfade: the key replaced the whole subtree on every switch,
+      // so both tabs were rebuilt from scratch and a half-typed question or a
+      // scroll position was thrown away; both copies were briefly in the tree
+      // at once, so there were two of every control; and the arriving tab was
+      // faded up from zero opacity, and a render object at zero opacity
+      // contributes no semantics, so a screen reader saw an empty screen for
+      // the length of the fade. Arrival motion belongs inside each page, where
+      // it cannot take the page's state or its accessibility with it.
+      body: IndexedStack(index: selectedIndex, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (value) =>
             ref.read(selectedTabProvider.notifier).state = value,
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book_rounded), label: 'Read'),
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline_rounded), selectedIcon: Icon(Icons.chat_bubble_rounded), label: 'Assistant'),
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book_rounded),
+            label: 'Read',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            label: 'Assistant',
+          ),
         ],
       ),
     );
@@ -339,6 +430,13 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
   late Future<List<SurahSummary>> _surahsFuture;
   final TextEditingController _searchController = TextEditingController();
 
+  // Select one stable verse for each calendar day. Using days since the Unix
+  // epoch avoids repeating the same verse on the same day of every month.
+  final int _verseOfDayIndex = DateTime.now()
+          .difference(DateTime(1970, 1, 1))
+          .inDays %
+      _verseOfDayPool.length;
+  
   @override
   void initState() {
     super.initState();
@@ -389,8 +487,6 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
     final theme = Theme.of(context);
     // Watched, not loaded once: this rebuilds whenever the reader records a new
     // position, which is what keeps the resume row current.
-    final lastRead = ref.watch(lastReadProvider);
-
     // Consume any pending request to open a verse. Cleared immediately so a
     // later rebuild cannot re-open the same verse.
     ref.listen<ReaderTarget?>(readerTargetProvider, (previous, next) {
@@ -402,9 +498,7 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Quran'),
-      ),
+      appBar: AppBar(title: const Text('Quran')),
       body: FutureBuilder<List<SurahSummary>>(
         future: _surahsFuture,
         builder: (context, snapshot) {
@@ -430,8 +524,8 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
           final surahs = query.isEmpty
               ? allSurahs
               : allSurahs
-                  .where((surah) => surahMatchesQuery(surah, query))
-                  .toList();
+                    .where((surah) => surahMatchesQuery(surah, query))
+                    .toList();
 
           return Builder(
             builder: (context) {
@@ -450,132 +544,206 @@ class _SurahListPageState extends ConsumerState<SurahListPage> {
                         ),
                       ),
                     ),
-                    if (lastRead != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            final resumeSurah = allSurahs.firstWhere(
-                              (surah) => surah.number == lastRead.surahNumber,
-                              orElse: () => allSurahs.first,
-                            );
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => ReaderPage(
-                                  surah: resumeSurah,
-                                  initialAyah: lastRead.ayahNumber,
-                                ),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: theme.colorScheme.outline.withOpacity(0.45)),
+                    Padding(
+  padding: const EdgeInsets.only(bottom: 16),
+  child: EntranceFade(
+    child: Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F6E56),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: -25,
+            right: -15,
+            child: Opacity(
+              opacity: 0.15,
+              child: Icon(
+                Icons.menu_book_rounded,
+                size: 110,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.25),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Verse of the day',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white.withOpacity(0.9),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '"${_verseOfDayPool[_verseOfDayIndex]['text']}"',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontStyle: FontStyle.italic,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _verseOfDayPool[_verseOfDayIndex]['reference']!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white.withOpacity(0.85),
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () {
+                          final verse = _verseOfDayPool[_verseOfDayIndex];
+                          SharePlus.instance.share(
+                            ShareParams(
+                              text:
+                                  '"${verse['text']}"\n\n— ${verse['reference']}\n\nShared from the Quran Study App',
                             ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.play_arrow_rounded, color: theme.colorScheme.primary),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Resume reading',
-                                        style: theme.textTheme.titleMedium,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Surah ${allSurahs.firstWhere((s) => s.number == lastRead.surahNumber).nameSimple} • Ayah ${lastRead.ayahNumber}',
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.25),
+                          ),
+                          child: const Icon(
+                            Icons.share_rounded,
+                            size: 16,
+                            color: Colors.white,
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      ActionChip(
+                        backgroundColor: Colors.white.withOpacity(0.25),
+                        side: BorderSide.none,
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Read in context',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ],
+                        ),
+                        onPressed: () {
+                          final verse = _verseOfDayPool[_verseOfDayIndex];
+                          final surahNumber = int.parse(verse['surah']!);
+                          final ayahNumber = int.parse(verse['ayah']!);
+                          final targetSurah = allSurahs.firstWhere(
+                            (surah) => surah.number == surahNumber,
+                            orElse: () => allSurahs.first,
+                          );
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ReaderPage(
+                                surah: targetSurah,
+                                initialAyah: ayahNumber,
+                                highlightInitialAyah: true,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  ),
+),
+
+
                     Expanded(
                       child: surahs.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'No surahs match your search.',
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
+                          ? const Center(
+                              child: Text('No surahs found.'),
                             )
                           : ListView.separated(
+                              padding: const EdgeInsets.only(bottom: 24),
                               itemCount: surahs.length,
-                              separatorBuilder: (_, __) => Divider(
-                                height: 1,
-                                color: theme.dividerColor,
-                              ),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
                               itemBuilder: (context, index) {
                                 final surah = surahs[index];
-                                return InkWell(
-                                  onTap: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => ReaderPage(surah: surah),
-                                      ),
-                                    );
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        SizedBox(
-                                          width: 36,
-                                          child: Text(
-                                            '${surah.number}',
-                                            textAlign: TextAlign.center,
-                                            style: theme.textTheme.bodyMedium?.copyWith(
-                                              color: theme.colorScheme.onSurfaceVariant,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                surah.nameArabic,
-                                                textDirection: TextDirection.rtl,
-                                                textAlign: TextAlign.right,
-                                                style: TextStyle(
-                                                  fontFamily: 'AmiriQuran',
-                                                  fontSize: 28,
-                                                  height: 1.5,
-                                                  color: theme.colorScheme.onSurface,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                '${surah.nameSimple} • ${surah.revelationPlace} • ${surah.verseCount} ayahs',
-                                                style: theme.textTheme.bodyMedium?.copyWith(
-                                                  color: theme.colorScheme.onSurfaceVariant,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
+                                return Card(
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor:
+                                          theme.colorScheme.primaryContainer,
+                                      child: Text('${surah.number}'),
                                     ),
+                                    title: Text(
+                                      surah.nameSimple,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${surah.nameTransliterated} • '
+                                      '${surah.verseCount} ayahs • '
+                                      '${surah.revelationPlace}',
+                                    ),
+                                    trailing: Text(
+                                      surah.nameArabic,
+                                      textDirection: TextDirection.rtl,
+                                      style: theme.textTheme.titleMedium,
+                                    ),
+                                    onTap: () {
+                                      ref
+                                          .read(lastReadProvider.notifier)
+                                          .save(surah.number, 1);
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => ReaderPage(
+                                            surah: surah,
+                                            initialAyah: 1,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 );
                               },
@@ -612,7 +780,8 @@ class ReaderPage extends ConsumerStatefulWidget {
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
 }
 
-class _ReaderPageState extends ConsumerState<ReaderPage> {
+class _ReaderPageState extends ConsumerState<ReaderPage>
+    with SingleTickerProviderStateMixin {
   late Future<List<AyahEntry>> _ayahsFuture;
   bool _showTranslations = true;
   Set<String> _bookmarks = <String>{};
@@ -620,7 +789,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   final Map<int, int> _indexToVerse = <int, int>{};
   final GlobalKey _listKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
+  final int _verseOfDayIndex = DateTime.now().day % _verseOfDayPool.length;
   int? _pendingScrollToAyah;
+  int _scrollAttempts = 0;
   int? _highlightedAyah;
   Timer? _highlightTimer;
   Timer? _scrollSettleTimer;
@@ -641,6 +812,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   /// [_playingVerse]: this mode has no verse to track.
   bool _fullSurahPlaying = false;
 
+  /// Drives the play/pause morph. Held here rather than derived from state so
+  /// the icon animates between shapes instead of being swapped out.
+  late final AnimationController _playPauseController;
+  late final Animation<double> _playPauseAnimation;
+
   static const Duration _highlightHold = Duration(milliseconds: 1600);
 
   @override
@@ -650,6 +826,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     _lastRead = ref.read(lastReadProvider.notifier);
     _recitation = ref.read(recitationServiceProvider);
     _fullSurah = ref.read(fullSurahServiceProvider);
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: Motion.quick,
+    );
+    _playPauseAnimation = CurvedAnimation(
+      parent: _playPauseController,
+      curve: Motion.curve,
+    );
     _pendingScrollToAyah = widget.initialAyah;
     if (widget.highlightInitialAyah) {
       _highlightedAyah = widget.initialAyah;
@@ -679,6 +863,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     // captured service: `ref` is already dead by dispose.
     _recitation.stop();
     _fullSurah.stop();
+    _playPauseController.dispose();
     _highlightTimer?.cancel();
     _scrollSettleTimer?.cancel();
     _scrollController.removeListener(_handleScroll);
@@ -825,8 +1010,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       // below.
       final selected = reciter;
       if (selected == null) {
-        setState(() => _audioError =
-            'No reciter available. Recitation needs a connection.');
+        setState(
+          () => _audioError =
+              'No reciter available. Recitation needs a connection.',
+        );
         return;
       }
       final source = await service.resolveSource(selected);
@@ -834,9 +1021,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         return;
       }
       if (source == null) {
-        setState(() => _audioError =
-            'Could not find audio for ${selected.label}. '
-            'Try another reciter.');
+        setState(
+          () => _audioError =
+              'Could not find audio for ${selected.label}. '
+              'Try another reciter.',
+        );
         return;
       }
 
@@ -863,8 +1052,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       );
     } catch (error) {
       if (mounted) {
-        setState(() => _audioError =
-            'Recitation could not be played. Check your connection.');
+        setState(
+          () => _audioError =
+              'Recitation could not be played. Check your connection.',
+        );
       }
     } finally {
       if (mounted) {
@@ -883,6 +1074,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       await _fullSurah.pause();
       if (mounted) {
         setState(() => _fullSurahPlaying = false);
+        _playPauseController.reverse();
       }
       return;
     }
@@ -908,16 +1100,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
       final selected = recitation;
       if (selected == null) {
-        setState(() => _audioError =
-            'No reciter available. Recitation needs a connection.');
+        setState(
+          () => _audioError =
+              'No reciter available. Recitation needs a connection.',
+        );
         return;
       }
       // Many sets are incomplete, so this is checked before playing rather
       // than surfaced as a failed request.
       if (!selected.hasSurah(widget.surah.number)) {
-        setState(() => _audioError =
-            '${selected.reciterName} does not have '
-            '${widget.surah.nameSimple}. Try another reciter.');
+        setState(
+          () => _audioError =
+              '${selected.reciterName} does not have '
+              '${widget.surah.nameSimple}. Try another reciter.',
+        );
         return;
       }
 
@@ -932,16 +1128,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         onDone: () {
           if (mounted) {
             setState(() => _fullSurahPlaying = false);
+            _playPauseController.reverse();
           }
         },
       );
       if (mounted) {
         setState(() => _fullSurahPlaying = true);
+        _playPauseController.forward();
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _audioError =
-            'Recitation could not be played. Check your connection.');
+        setState(
+          () => _audioError =
+              'Recitation could not be played. Check your connection.',
+        );
       }
     } finally {
       if (mounted) {
@@ -951,6 +1151,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   /// Bring [verse] into view, used to follow the recitation.
+  /// Bring [verse] into view, but only when it is not already there.
+  ///
+  /// The unconditional version was a trap. `ensureVisible` always animates, and
+  /// Flutter's `Scrollable` ignores pointers for as long as a scroll animation
+  /// is in flight - deliberately, so that nobody taps a moving list. So tapping
+  /// play on a verse already on screen nudged it to the 30% line and made every
+  /// control in the reader inert for 300ms, including the stop button that had
+  /// just appeared under the finger that started it. Scrolling to something the
+  /// reader can already see buys nothing and costs that.
   void _scrollToVerse(int verse) {
     final index = _indexToVerse.entries
         .firstWhere(
@@ -965,11 +1174,42 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     if (context == null) {
       return;
     }
+    if (_isComfortablyVisible(context)) {
+      return;
+    }
     Scrollable.ensureVisible(
       context,
       alignment: 0.3,
       duration: const Duration(milliseconds: 300),
     );
+  }
+
+  /// Whether enough of [target] is on screen that moving the list would only
+  /// disturb the reader.
+  ///
+  /// "Enough" is the whole verse, or 60% of the viewport for a verse too long
+  /// to fit in it at once - otherwise a single long ayah could never satisfy
+  /// the test and would be re-scrolled on every callback.
+  bool _isComfortablyVisible(BuildContext target) {
+    final box = target.findRenderObject() as RenderBox?;
+    final listBox = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null ||
+        listBox == null ||
+        !box.attached ||
+        !listBox.attached ||
+        !box.hasSize ||
+        !listBox.hasSize) {
+      // Nothing measurable, so let ensureVisible decide.
+      return false;
+    }
+    final top = box.localToGlobal(Offset.zero).dy;
+    final viewportTop = listBox.localToGlobal(Offset.zero).dy;
+    final viewportBottom = viewportTop + listBox.size.height;
+    final visible =
+        math.min(top + box.size.height, viewportBottom) -
+        math.max(top, viewportTop);
+    final enough = math.min(box.size.height, listBox.size.height * 0.6);
+    return visible >= enough;
   }
 
   /// The verse number of the topmost ayah still visible in the viewport, or
@@ -1020,7 +1260,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             final currentSettings = ref.watch(appSettingsProvider);
 
             return SafeArea(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1060,7 +1300,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              Text('${currentSettings.arabicFontSize.round()} px'),
+                              Text(
+                                '${currentSettings.arabicFontSize.round()} px',
+                              ),
                             ],
                           ),
                         ),
@@ -1107,13 +1349,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                                 Text(
                                   mode == RecitationMode.verseByVerse
                                       ? 'Plays one ayah at a time, highlighting '
-                                          'and scrolling as it goes. Nine reciters.'
+                                            'and scrolling as it goes. Nine reciters.'
                                       : 'Plays the surah as one recording. Many '
-                                          'more reciters, but no verse tracking - '
-                                          'these files have no ayah boundaries.',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
+                                            'more reciters, but no verse tracking - '
+                                            'these files have no ayah boundaries.',
+                                  style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(
                                         fontSize: 12,
                                         color: Theme.of(context)
@@ -1190,8 +1430,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                               ),
                               SegmentedButton<ThemeMode>(
                                 segments: const [
-                                  ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                                  ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                                  ButtonSegment(
+                                    value: ThemeMode.light,
+                                    label: Text('Light'),
+                                  ),
+                                  ButtonSegment(
+                                    value: ThemeMode.dark,
+                                    label: Text('Dark'),
+                                  ),
                                 ],
                                 selected: {currentSettings.themeMode},
                                 onSelectionChanged: (value) {
@@ -1212,7 +1458,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Translation source'),
-                          subtitle: const Text('Tanzil Project • Abdullah Yusuf Ali'),
+                          subtitle: const Text(
+                            'Tanzil Project • Abdullah Yusuf Ali',
+                          ),
                         ),
                         ListTile(
                           contentPadding: EdgeInsets.zero,
@@ -1222,8 +1470,38 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           onTap: () async {
                             final uri = Uri.parse('https://tanzil.net');
                             if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
                             }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _SettingsSection(
+                      title: 'About',
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.info_outline_rounded),
+                          title: const Text('About this app'),
+                          subtitle: const Text(
+                            'Credits, licences, and what the assistant will '
+                            'not do',
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () {
+                            // The sheet closes first, and the push uses the
+                            // reader's context rather than the sheet's: the
+                            // sheet's is defunct the moment it is popped.
+                            Navigator.of(sheetContext).pop();
+                            Navigator.of(this.context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const AboutPage(),
+                              ),
+                            );
                           },
                         ),
                       ],
@@ -1262,10 +1540,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.surah.nameSimple,
-              style: theme.textTheme.titleMedium,
-            ),
+            Text(widget.surah.nameSimple, style: theme.textTheme.titleMedium),
             Text(
               widget.surah.nameArabic,
               textDirection: TextDirection.rtl,
@@ -1281,10 +1556,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         actions: [
           if (mode == RecitationMode.fullSurah)
             IconButton(
-              icon: Icon(
-                _fullSurahPlaying
-                    ? Icons.pause_circle_outline
-                    : Icons.play_circle_outline,
+              icon: AnimatedIcon(
+                icon: AnimatedIcons.play_pause,
+                progress: _playPauseAnimation,
               ),
               tooltip: _fullSurahPlaying
                   ? 'Pause recitation'
@@ -1320,19 +1594,65 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
           final ayahs = snapshot.data ?? const <AyahEntry>[];
           final audioError = _audioError;
+WidgetsBinding.instance.addPostFrameCallback((_) {
+  if (_pendingScrollToAyah == null) {
+    return;
+  }
+  final index = _pendingScrollToAyah!;
+  final key = _ayahKeys[index];
+  if (key != null && key.currentContext != null) {
+    Scrollable.ensureVisible(
+      key.currentContext!,
+      alignment: 0.45,
+      duration: const Duration(milliseconds: 220),
+    );
+    _pendingScrollToAyah = null;
+    _scrollAttempts = 0;
+    return;
+  }
 
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_pendingScrollToAyah == null) {
-              return;
-            }
-            final index = _pendingScrollToAyah! - 1;
-            final key = _ayahKeys[index];
-            if (key != null && key.currentContext != null) {
-              Scrollable.ensureVisible(key.currentContext!, alignment: 0.45, duration: const Duration(milliseconds: 220));
-            }
-            _pendingScrollToAyah = null;
-          });
+  if (!_scrollController.hasClients) {
+    return;
+  }
 
+  // Give up after a handful of tries rather than looping forever.
+  if (_scrollAttempts >= 10) {
+    _pendingScrollToAyah = null;
+    _scrollAttempts = 0;
+    return;
+  }
+  _scrollAttempts++;
+
+  // Use the closest already-built verse to estimate real item height,
+  // instead of a fixed guess that breaks on surahs with long verses.
+  MapEntry<int, GlobalKey>? nearest;
+  for (final entry in _ayahKeys.entries) {
+    if (entry.value.currentContext == null) continue;
+    if (nearest == null ||
+        (entry.key - index).abs() < (nearest.key - index).abs()) {
+      nearest = entry;
+    }
+  }
+
+  double estimatedOffset;
+  if (nearest != null) {
+    final box = nearest.value.currentContext!.findRenderObject() as RenderBox;
+    final itemHeight = box.size.height + 10; // + separator
+    final nearestGlobalY = box.localToGlobal(Offset.zero).dy;
+    final nearestOffset = _scrollController.offset + nearestGlobalY;
+    estimatedOffset = nearestOffset + (index - nearest.key) * itemHeight;
+  } else {
+    // No items built yet at all: fall back to a rough constant guess.
+    estimatedOffset = index * 260.0;
+  }
+
+  estimatedOffset = estimatedOffset.clamp(
+    0.0,
+    _scrollController.position.maxScrollExtent,
+  );
+  _scrollController.jumpTo(estimatedOffset);
+  setState(() {});
+});
           if (audioError != null) {
             // Reported inline rather than as a snackbar: the reader may be
             // scrolled anywhere, and a transient toast is easy to miss.
@@ -1357,46 +1677,76 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             key: _listKey,
             controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
-            itemCount: ayahs.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 1,
-              color: theme.dividerColor,
-            ),
+            // One extra item: the gradient header at index 0. It scrolls away
+            // with the content rather than staying fixed above the verses.
+            itemCount: ayahs.length + 1,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              final ayah = ayahs[index];
+              if (index == 0) {
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 700),
+                    child: EntranceFade(
+                      child: _SurahHeaderCard(surah: widget.surah),
+                    ),
+                  ),
+                );
+              }
+              final ayah = ayahs[index - 1];
               // Keys must be stable across rebuilds: they anchor both the
               // scroll-to-ayah jump and the read-position tracking.
               final key = _ayahKeys.putIfAbsent(index, () => GlobalKey());
+              // Keyed by list index, which is one ahead of the verse index now
+              // that the header occupies position zero.
               _indexToVerse[index] = ayah.verseNumber;
-              final isBookmarked = _bookmarks.contains('${widget.surah.number}:${ayah.verseNumber}');
-              final showTranslation = _showTranslations && ayah.translation.trim().isNotEmpty;
+              final isBookmarked = _bookmarks.contains(
+                '${widget.surah.number}:${ayah.verseNumber}',
+              );
+              final showTranslation =
+                  _showTranslations && ayah.translation.trim().isNotEmpty;
               final isHighlighted = _highlightedAyah == ayah.verseNumber;
               final isReciting = _playingVerse == ayah.verseNumber;
 
               return Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 700),
-                  // Padding is unchanged; only the background animates, so
-                  // arriving at a verse does not shift the text around it.
-                  child: AnimatedContainer(
+                  child: EntranceFade(
+                    child: AnimatedContainer(
                     key: key,
-                    duration: const Duration(milliseconds: 300),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    duration: Motion.duration(context, Motion.normal),
+                    curve: Motion.curve,
                     decoration: BoxDecoration(
-                      // The reciting tint is the stronger of the two: it
-                      // tracks something moving, so it has to be findable at a
-                      // glance while scrolling.
-                      color: isReciting
-                          ? theme.colorScheme.primary.withOpacity(0.16)
-                          : isHighlighted
-                              ? theme.colorScheme.tertiary.withOpacity(0.16)
-                              : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
+                      // The card itself stays the plain surface colour: the
+                      // Arabic sits on it, so nothing tinted goes behind the
+                      // text. State is carried by the strip and the shadow.
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: isReciting
+                          ? Elevation.raised(
+                              theme.brightness,
+                              theme.colorScheme.primary,
+                            )
+                          : Elevation.resting(theme.brightness),
                     ),
+                    clipBehavior: Clip.antiAlias,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
+                        // Tinted action strip. All the colour for this row
+                        // lives here, above the verse rather than behind it.
+                        AnimatedContainer(
+                          duration: Motion.duration(context, Motion.normal),
+                          curve: Motion.curve,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          color: isReciting
+                              ? theme.colorScheme.primary.withOpacity(0.16)
+                              : isHighlighted
+                              ? theme.colorScheme.tertiary.withOpacity(0.14)
+                              : theme.colorScheme.surfaceContainerHighest,
+                          child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Container(
@@ -1404,43 +1754,61 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                               height: 28,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(999),
+                                shape: BoxShape.circle,
+                                color: theme.colorScheme.primary.withOpacity(
+                                  theme.brightness == Brightness.light
+                                      ? 0.12
+                                      : 0.22,
+                                ),
                               ),
                               child: Text(
                                 '${ayah.verseNumber}',
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.primary,
                                 ),
                               ),
                             ),
                             const Spacer(),
                             if (mode == RecitationMode.verseByVerse)
                               IconButton(
-                              tooltip: isReciting
-                                  ? 'Stop reciting'
-                                  : 'Recite from this verse',
-                              icon: Icon(
-                                isReciting
-                                    ? Icons.stop_circle_outlined
-                                    : Icons.play_circle_outline,
-                                color: isReciting
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.onSurfaceVariant,
-                              ),
-                              onPressed: _audioBusy
-                                  ? null
-                                  : () => _toggleRecitation(
+                                tooltip: isReciting
+                                    ? 'Stop reciting'
+                                    : 'Recite from this verse',
+                                // One glyph, never scaled. An AnimatedSwitcher
+                                // here was actively harmful: it kept both
+                                // glyphs in the tree for the length of the
+                                // crossfade, and the ScaleTransition brought
+                                // the arriving one up from zero - so for the
+                                // first frames after a tap the control had no
+                                // hit area, and a quick second tap fell
+                                // straight through to the card behind it.
+                                // Swapping the glyph outright is the whole
+                                // explanation of the state change anyway.
+                                icon: Icon(
+                                  isReciting
+                                      ? Icons.stop_circle_outlined
+                                      : Icons.play_circle_outline,
+                                  color: isReciting
+                                      ? theme.colorScheme.primary
+                                      : theme.colorScheme.onSurfaceVariant,
+                                ),
+                                onPressed: _audioBusy
+                                    ? null
+                                    : () => _toggleRecitation(
                                         ayah.verseNumber,
                                         ayahs,
                                       ),
-                            ),
+                              ),
                             IconButton(
-                              tooltip: isBookmarked ? 'Remove bookmark' : 'Add bookmark',
+                              tooltip: isBookmarked
+                                  ? 'Remove bookmark'
+                                  : 'Add bookmark',
                               icon: Icon(
-                                isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                                isBookmarked
+                                    ? Icons.bookmark_rounded
+                                    : Icons.bookmark_border_rounded,
                                 color: theme.colorScheme.primary,
                               ),
                               onPressed: () async {
@@ -1449,32 +1817,41 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        SelectableText(
-                          ayah.text,
-                          textDirection: TextDirection.rtl,
-                          textAlign: TextAlign.right,
-                          style: TextStyle(
-                            fontFamily: 'AmiriQuran',
-                            fontSize: settings.arabicFontSize,
-                            height: 1.9,
-                            color: theme.colorScheme.onSurface,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SelectableText(
+                                ayah.text,
+                                textDirection: TextDirection.rtl,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontFamily: 'AmiriQuran',
+                                  fontSize: settings.arabicFontSize,
+                                  height: 1.9,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              if (showTranslation) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  ayah.translation,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    height: 1.6,
+                                    fontWeight: FontWeight.w400,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        if (showTranslation) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            ayah.translation,
-                            style: TextStyle(
-                              fontSize: 16,
-                              height: 1.6,
-                              fontWeight: FontWeight.w400,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
+                  ),
                   ),
                 ),
               );
@@ -1547,6 +1924,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   String? _answer;
   String? _error;
   String? _stage;
+
   /// Verses retrieved for this question. Shown while the answer is being
   /// composed, as progress, never as the answer's sources.
   List<String> _references = const [];
@@ -1559,7 +1937,8 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   bool _listening = false;
   bool _speaking = false;
 
-  static const String _stageSearching = 'Searching the translation for relevant verses';
+  static const String _stageSearching =
+      'Searching the translation for relevant verses';
   static const String _stageComposing = 'Composing an answer from those verses';
 
   /// Whether the off-device notice has been shown and accepted.
@@ -1689,11 +2068,13 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   /// an error for display.
   Future<Map<String, dynamic>?> _post(String path, String question) async {
     try {
-      final response = await ref.read(httpClientProvider).post(
-        Uri.parse('$kQuranBackendBaseUrl$path'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'question': question}),
-      );
+      final response = await ref
+          .read(httpClientProvider)
+          .post(
+            Uri.parse('$kQuranBackendBaseUrl$path'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'question': question}),
+          );
 
       if (!mounted) {
         return null;
@@ -1715,7 +2096,8 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = 'Unable to reach the backend at $kQuranBackendBaseUrl. '
+          _error =
+              'Unable to reach the backend at $kQuranBackendBaseUrl. '
               'The backend needs to be running.';
         });
       }
@@ -1809,7 +2191,8 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   /// the action is `send` the field stops inserting newlines on Enter
   /// altogether - so Shift+Enter has to insert one itself or nothing happens.
   KeyEventResult _handleQuestionKey(FocusNode node, KeyEvent event) {
-    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.numpadEnter;
     if (!isEnter || event is! KeyDownEvent) {
       return KeyEventResult.ignored;
@@ -1866,9 +2249,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Assistant'),
-      ),
+      appBar: AppBar(title: const Text('Assistant')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -1885,7 +2266,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surface,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+                          boxShadow: Elevation.resting(theme.brightness),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1895,20 +2276,22 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                               style: theme.textTheme.titleMedium,
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              _question!,
-                              style: theme.textTheme.bodyMedium,
-                            ),
+                            Text(_question!, style: theme.textTheme.bodyMedium),
                           ],
                         ),
                       ),
                     if (_question != null) const SizedBox(height: 16),
                     if (_answer != null || _error != null)
-                      Container(
+                      _FadeIn(
+                        // Keyed on the text so a new answer fades rather than
+                        // swapping under the reader's eyes.
+                        key: ValueKey<String>(_error ?? _answer ?? ''),
+                        child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest,
+                          color: theme.colorScheme.surface,
                           borderRadius: BorderRadius.circular(18),
+                          boxShadow: Elevation.resting(theme.brightness),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1924,7 +2307,10 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                                 // answer, never for an error message.
                                 if (_answer != null &&
                                     _error == null &&
-                                    (ref.watch(voiceAvailableProvider).valueOrNull ?? false))
+                                    (ref
+                                            .watch(voiceAvailableProvider)
+                                            .valueOrNull ??
+                                        false))
                                   IconButton(
                                     onPressed: _toggleSpeaking,
                                     visualDensity: VisualDensity.compact,
@@ -1960,9 +2346,14 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                                     .map(
                                       (reference) => ActionChip(
                                         label: Text(reference),
-                                        avatar: const Icon(Icons.menu_book_outlined, size: 16),
-                                        tooltip: 'Open $reference in the reader',
-                                        onPressed: () => _openReference(reference),
+                                        avatar: const Icon(
+                                          Icons.menu_book_outlined,
+                                          size: 16,
+                                        ),
+                                        tooltip:
+                                            'Open $reference in the reader',
+                                        onPressed: () =>
+                                            _openReference(reference),
                                       ),
                                     )
                                     .toList(),
@@ -1970,6 +2361,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                             ],
                           ],
                         ),
+                      ),
                       ),
                     if (_loading && _stage != null)
                       Padding(
@@ -2022,7 +2414,10 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                     ),
                     child: IconButton(
                       onPressed: _submitQuestion,
-                      icon: Icon(Icons.send_rounded, color: theme.colorScheme.onPrimary),
+                      icon: Icon(
+                        Icons.send_rounded,
+                        color: theme.colorScheme.onPrimary,
+                      ),
                       tooltip: 'Send question',
                     ),
                   ),
@@ -2093,11 +2488,19 @@ class _MicButtonState extends State<_MicButton>
     final theme = Theme.of(context);
     final listening = widget.listening;
 
-    return Semantics(
-      label: listening ? 'Stop dictating' : 'Dictate a question',
-      toggled: listening,
-      button: true,
-      child: AnimatedBuilder(
+    // `container: true` is load-bearing, not tidiness. Without it this
+    // annotation owns no semantics node of its own and is folded into the
+    // IconButton's, where the tooltip already sits - and a tooltip is a
+    // separate property from a label, so the button ended up with no
+    // accessible name at all. Merged so a screen reader announces one toggle
+    // button rather than a label and a button beside it.
+    return MergeSemantics(
+      child: Semantics(
+        container: true,
+        button: true,
+        toggled: listening,
+        label: listening ? 'Stop dictating' : 'Dictate a question',
+        child: AnimatedBuilder(
         animation: _pulse,
         builder: (context, child) {
           final spread = listening ? 3 + (_pulse.value * 5) : 0.0;
@@ -2105,9 +2508,7 @@ class _MicButtonState extends State<_MicButton>
             margin: const EdgeInsets.only(right: 4),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: listening
-                  ? theme.colorScheme.error
-                  : Colors.transparent,
+              color: listening ? theme.colorScheme.error : Colors.transparent,
               boxShadow: listening
                   ? [
                       BoxShadow(
@@ -2132,6 +2533,7 @@ class _MicButtonState extends State<_MicButton>
           tooltip: listening
               ? 'Stop dictating'
               : 'Dictate a question (audio is sent off device)',
+        ),
         ),
       ),
     );
@@ -2227,23 +2629,28 @@ class _SettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          ...children,
-        ],
+    // A Material, not a plain coloured Container. ListTile paints its ink on
+    // the nearest Material ancestor, so a decorated box in between hides every
+    // splash - Flutter asserts on exactly this, which meant the settings sheet
+    // was throwing in debug the moment it opened.
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            ...children,
+          ],
+        ),
       ),
     );
   }
@@ -2287,7 +2694,10 @@ class _FullSurahReciterPicker extends ConsumerWidget {
               for (final recitation in recitations)
                 DropdownMenuItem(
                   value: recitation,
-                  child: Text(recitation.label, overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    recitation.label,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
             ],
             onChanged: (recitation) {
@@ -2298,6 +2708,165 @@ class _FullSurahReciterPicker extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The surah header: identity gradient, names, metadata pills and the opening
+/// Bismillah.
+///
+/// The Bismillah is rendered from the corpus field the importer stores, never
+/// typed out here. Surah 1 has it as verse 1 and surah 9 has none, so both
+/// correctly render without it.
+class _SurahHeaderCard extends StatelessWidget {
+  const _SurahHeaderCard({required this.surah});
+
+  final SurahSummary surah;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bismillah = surah.bismillah;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: AmbientBackdrop(
+        child: GradientCard(
+        padding: const EdgeInsets.fromLTRB(18, 18, 20, 20),
+        patternTile: 66,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // The reader's anchor: which surah of the 114 this is. It was
+                // previously only in the app bar as part of a text line, which
+                // made it the least findable fact on the screen.
+                NumberBadge(
+                  surah.number,
+                  onGradient: true,
+                  diameter: 56,
+                  ringed: true,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        surah.nameSimple,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: Colors.white,
+                          fontSize: 22,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        surah.nameTransliterated,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withOpacity(0.85),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  surah.nameArabic,
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(
+                    fontFamily: 'AmiriQuran',
+                    fontSize: 26,
+                    height: 1.6,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                MetaPill(surah.revelationPlace),
+                MetaPill('${surah.verseCount} ayahs'),
+              ],
+            ),
+            if (bismillah != null) ...[
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  bismillah,
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'AmiriQuran',
+                    fontSize: 22,
+                    height: 1.9,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fades its child in on first build, and again whenever its key changes.
+class _FadeIn extends StatefulWidget {
+  const _FadeIn({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<_FadeIn> createState() => _FadeInState();
+}
+
+class _FadeInState extends State<_FadeIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: Motion.normal,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _controller.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (Motion.reduced(context)) {
+      return widget.child;
+    }
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: _controller, curve: Motion.curve),
+      child: widget.child,
     );
   }
 }
